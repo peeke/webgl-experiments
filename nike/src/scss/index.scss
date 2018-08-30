@@ -1,0 +1,25 @@
+body {
+  margin: 0;
+  overflow: hidden;
+  font-family: sans-serif;
+
+  &:after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 66.666vh;
+    height: 66.666vh;
+    border: 1px solid #ccc;
+  }
+}
+
+canvas {
+  width: 100vw;
+  height: 100vh;
+}
+
+.content {
+  padding: 5vmin;
+}

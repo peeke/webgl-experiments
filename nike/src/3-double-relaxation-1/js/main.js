@@ -1,0 +1,242 @@
+import {
+  PlaneGeometry,
+  SphereGeometry,
+  Mesh,
+  PointLight,
+  Scene,
+  PerspectiveCamera,
+  WebGLRenderer,
+  Vector2,
+  MeshBasicMaterial,
+  VertexColors,
+  Color
+} from "three"
+
+const WALL_DENSITY = 25
+const REST_DENSITY = .1
+const STIFFNESS = .4
+const STIFFNESS_NEAR = .1
+const INTERACTION_RADIUS = 4
+const GRAVITY = new Vector2(0, -120)
+const VISCOSITY = 0
+
+console.log({
+  REST_DENSITY,
+  STIFFNESS,
+  INTERACTION_RADIUS,
+  GRAVITY,
+  VISCOSITY
+})
+
+import SpatialHashMap from '../../js/SpatialHashMap'
+
+const canvas = document.querySelector("#canvas")
+const dpr = window.devicePixelRatio
+const { offsetWidth: width, offsetHeight: height } = canvas
+const calculateViewportHeight = (perspectiveAngle, distance) => {
+  return Math.tan(perspectiveAngle / 2 / 180 * Math.PI) * distance * 2
+}
+
+const scene = new Scene()
+const camera = new PerspectiveCamera(75, width / height, 0.1, 1000)
+camera.position.z = 30
+
+const renderer = new WebGLRenderer({ canvas, alpha: true })
+renderer.setPixelRatio(window.devicePixelRatio)
+renderer.setSize(width, height)
+
+const viewportHeight = calculateViewportHeight(75, 30)
+
+const light = new PointLight(0xffffff, 1, 100)
+light.position.set(20, 10, 30)
+scene.add(light)
+
+const particles = new Array(1000)
+  .fill(0)
+  .map((_, i) => ({
+    position: new Vector2(
+      Math.random() * viewportHeight * .33, 
+      viewportHeight * -.33 + Math.random() * viewportHeight * .66
+    ),
+    velocity: new Vector2(0, 0),
+    color: Math.random() * 0xffffff,
+    density: 1,
+    i
+  }))
+
+const hashMap = new SpatialHashMap(INTERACTION_RADIUS)
+
+particles.forEach(particle => {
+  const { position, color } = particle
+  const geometry = new SphereGeometry(viewportHeight / height * 3, 2, 2)
+  const material = new MeshBasicMaterial({ color })
+  const sphere = new Mesh(geometry, material)
+  particle.mesh = sphere
+  sphere.position.x = position.x
+  sphere.position.y = position.y
+  scene.add(sphere)
+  hashMap.add(position.x, position.y, particle)
+})
+
+const boundingArea = {
+  w: viewportHeight * .66,
+  h: viewportHeight * .66
+}
+
+const simulate = () => {
+  const dt = 60 / 1000
+
+  particles.forEach(particle => {
+    applyGlobalForces(particle, dt)
+    
+    particle.oldPosition = particle.position.clone()
+    particle.position.addScaledVector(particle.velocity, dt)
+
+    hashMap.add(
+      particle.position.x, 
+      particle.position.y, 
+      particle
+    )
+  })
+
+  particles.forEach(particle => {
+
+    particle.neighbors = hashMap.query(
+      particle.position.x, 
+      particle.position.y, 
+      INTERACTION_RADIUS
+    )
+
+    particle.walls = [
+      { position: new Vector2(boundingArea.w / 2 * Math.sign(particle.position.x || 1), particle.position.y) }, 
+      { position: new Vector2(particle.position.x, boundingArea.h / 2 * Math.sign(particle.position.y || 1)) }
+    ]
+
+    updateDensities(particle)
+
+  })
+
+  particles.forEach(particle => {
+
+    // applyViscosity(particle, dt)
+
+    // perform double density relaxation
+    if (particle.neighbors.length) {
+      relax(particle, dt)
+    }
+
+    // Calculate new velocities
+    calculateVelocity(particle)
+
+    // Update
+    particle.mesh.position.x = particle.position.x
+    particle.mesh.position.y = particle.position.y
+    particle.mesh.verticesNeedUpdate = true
+
+  })
+
+  hashMap.clear()
+}
+
+const applyGlobalForces = (particle, dt) => {
+  particle.velocity.addScaledVector(GRAVITY, dt)
+}
+
+const applyViscosity = (particle, dt) => {
+  particle.neighbors.forEach(neighbor => {
+    if (particle.i > neighbor.i) return
+    const g = gradient(particle, neighbor)
+    if (!g) return
+    const unit = neighbor.position.clone().sub(particle.position).normalize()
+    const u = particle.velocity.clone().sub(neighbor.velocity).dot(unit)
+    if (u > 0) {
+      const impulse = unit.multiplyScalar(dt * g * VISCOSITY * u * u)
+      particle.velocity.addScaledVector(impulse, -.5)
+      neighbor.velocity.addScaledVector(impulse, .5)
+    }
+  })  
+}
+
+const updateDensities = particle => {
+  let density = 0
+  let nearDensity = 0
+
+  particle.neighbors.forEach(neighbor => {
+    const g = gradient(particle, neighbor)
+    if (!g) return
+    density += g ** 2
+    nearDensity += g ** 3
+  })
+
+  particle.walls.forEach(neighbor => {
+    const g = gradient(particle, neighbor)
+    if (!g) return
+    density += WALL_DENSITY * g ** 2
+    nearDensity += WALL_DENSITY * g ** 3
+  })
+
+  particle.pressure = STIFFNESS * (density - REST_DENSITY)
+  particle.nearPressure = STIFFNESS_NEAR * nearDensity
+}
+
+const relax = (particle, dt) => {
+  particle.neighbors.forEach(neighbor => {
+    const g = gradient(particle, neighbor)
+    if (!g) return
+    const magnitude = particle.pressure * g + particle.nearPressure * g ** 2
+    const unit = neighbor.position.clone().sub(particle.position).normalize()
+    const d = unit.multiplyScalar(dt * dt).multiplyScalar(magnitude)
+    particle.position.addScaledVector(d, -.5)
+    neighbor.position.addScaledVector(d, .5)
+    
+    // resolve collisions
+    contain(particle)
+    contain(neighbor)
+  })
+
+  particle.walls.forEach(wall => {
+    const g = gradient(particle, wall)
+    if (!g) return
+    const magnitude = particle.pressure * g + particle.nearPressure * g ** 2
+    const unit = wall.position.clone().sub(particle.position).normalize()
+    const d = unit.multiplyScalar(dt * dt).multiplyScalar(magnitude)
+    particle.position.addScaledVector(d, -1)
+    
+    // resolve collisions
+    contain(particle)
+  })
+}
+
+const gradient = (particle, neighbor) => {
+  const difference = neighbor.position.clone().sub(particle.position)
+  return Math.max(0, 1 - (difference.length() / INTERACTION_RADIUS))
+}
+
+const contain = particle => {
+  particle.position.set(
+    Math.max(boundingArea.w / -2 + .01, Math.min(boundingArea.w / 2 - .01, particle.position.x)),
+    Math.max(boundingArea.h / -2 + .01, Math.min(boundingArea.h / 2 - .01, particle.position.y))
+  )
+}
+
+const calculateVelocity = particle => {
+  particle.velocity = particle.position.clone().sub(particle.oldPosition)
+}
+
+const t0 = performance.now()
+const runFor = 15000
+
+const render = auto => {
+  const shouldContinue = performance.now() - t0 < runFor
+  if (auto && shouldContinue) {
+    requestAnimationFrame(render)
+  }
+  simulate()
+  renderer.render(scene, camera)
+  // gcc.capture(canvas);
+}
+
+render(true)
+
+document.addEventListener('keyup', e => e.which === 32 && render())
+document.addEventListener('keyup', e => e.which === 32 && console.log(particles))

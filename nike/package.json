@@ -1,0 +1,29 @@
+{
+  "name": "nike",
+  "version": "0.0.0",
+  "description": "Fluid simulation in Nike logo in WebGL",
+  "main": "./src/index.html",
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "parcel ./src/index.html",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "webgl",
+    "fluid"
+  ],
+  "author": "Peeke Kuepers",
+  "license": "ISC",
+  "dependencies": {
+    "d3-quadtree": "^1.0.3",
+    "gif-capture-canvas": "^1.0.1",
+    "js-quadtree": "^1.2.0",
+    "perf_hooks": "0.0.1",
+    "three": "^0.90.0"
+  },
+  "devDependencies": {
+    "node-sass": "^4.9.0",
+    "parcel-bundler": "^1.9.7",
+    "parcel-plugin-glsl": "^0.1.0"
+  }
+}

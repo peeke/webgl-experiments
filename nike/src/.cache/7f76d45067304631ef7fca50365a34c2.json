@@ -1,0 +1,1 @@
+{"dependencies":[],"generated":{"js":"module.exports = `precision mediump float;\n\nuniform vec2 u_resolution;\nuniform sampler2D u_texture;\n\nvoid main() {\n  \n  vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n  vec4 tex = texture2D(u_texture, uv);\n\n  gl_FragColor = vec4(vec3(1.0 - min(1.0, tex.z)), 1.0);\n\n}\n`"},"hash":"9b83bd311bec77c80d5bd79712d824f2","cacheData":{}}
