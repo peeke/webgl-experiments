@@ -12,17 +12,13 @@ import {
   Color
 } from "three"
 
-const WALL_DENSITY = 25
-const REST_DENSITY = .1
-const STIFFNESS = .4
-const STIFFNESS_NEAR = .1
+const REST_DENSITY = 20
 const INTERACTION_RADIUS = 4
-const GRAVITY = new Vector2(0, -120)
-const VISCOSITY = 0
+const GRAVITY = new Vector2(0, 0)
+const VISCOSITY = .01
 
 console.log({
   REST_DENSITY,
-  STIFFNESS,
   INTERACTION_RADIUS,
   GRAVITY,
   VISCOSITY
@@ -51,11 +47,13 @@ const light = new PointLight(0xffffff, 1, 100)
 light.position.set(20, 10, 30)
 scene.add(light)
 
-const particles = new Array(1000)
+const mouse = new Vector2(-1000, -1000);
+
+const particles = new Array(1200)
   .fill(0)
   .map((_, i) => ({
     position: new Vector2(
-      Math.random() * viewportHeight * .33, 
+      Math.sign(-.5 + Math.random()) * (.5 + Math.random() / 2) * viewportHeight * .33, 
       viewportHeight * -.33 + Math.random() * viewportHeight * .66
     ),
     velocity: new Vector2(0, 0),
@@ -64,7 +62,7 @@ const particles = new Array(1000)
     i
   }))
 
-const hashMap = new SpatialHashMap(INTERACTION_RADIUS)
+const hashMap = new SpatialHashMap(INTERACTION_RADIUS / 10)
 
 particles.forEach(particle => {
   const { position, color } = particle
@@ -75,7 +73,6 @@ particles.forEach(particle => {
   sphere.position.x = position.x
   sphere.position.y = position.y
   scene.add(sphere)
-  hashMap.add(position.x, position.y, particle)
 })
 
 const boundingArea = {
@@ -85,18 +82,22 @@ const boundingArea = {
 
 const simulate = () => {
   const dt = 60 / 1000
+  
+  hashMap.clear()
 
   particles.forEach(particle => {
-    applyGlobalForces(particle, dt)
-    
-    particle.oldPosition = particle.position.clone()
-    particle.position.addScaledVector(particle.velocity, dt)
 
     hashMap.add(
       particle.position.x, 
       particle.position.y, 
       particle
     )
+
+    applyGlobalForces(particle, dt)
+    
+    particle.oldPosition = particle.position.clone()
+    particle.position.addScaledVector(particle.velocity, dt)
+
   })
 
   particles.forEach(particle => {
@@ -107,23 +108,18 @@ const simulate = () => {
       INTERACTION_RADIUS
     )
 
-    particle.walls = [
-      { position: new Vector2(boundingArea.w / 2 * Math.sign(particle.position.x || 1), particle.position.y) }, 
-      { position: new Vector2(particle.position.x, boundingArea.h / 2 * Math.sign(particle.position.y || 1)) }
-    ]
+    applyViscosity(particle, dt)
 
     updateDensities(particle)
-
-  })
-
-  particles.forEach(particle => {
-
-    // applyViscosity(particle, dt)
 
     // perform double density relaxation
     if (particle.neighbors.length) {
       relax(particle, dt)
     }
+
+  })
+
+  particles.forEach(particle => {
 
     // Calculate new velocities
     calculateVelocity(particle)
@@ -135,16 +131,18 @@ const simulate = () => {
 
   })
 
-  hashMap.clear()
 }
 
 const applyGlobalForces = (particle, dt) => {
   particle.velocity.addScaledVector(GRAVITY, dt)
+  const fromMouse = particle.position.clone().sub(mouse)
+  const mouseForce = fromMouse.normalize().multiplyScalar(10 / fromMouse.lengthSq())
+  particle.velocity.add(mouseForce)
 }
 
 const applyViscosity = (particle, dt) => {
   particle.neighbors.forEach(neighbor => {
-    if (particle.i > neighbor.i) return
+    if (particle.i >= neighbor.i) return
     const g = gradient(particle, neighbor)
     if (!g) return
     const unit = neighbor.position.clone().sub(particle.position).normalize()
@@ -168,15 +166,15 @@ const updateDensities = particle => {
     nearDensity += g ** 3
   })
 
-  particle.walls.forEach(neighbor => {
-    const g = gradient(particle, neighbor)
-    if (!g) return
-    density += WALL_DENSITY * g ** 2
-    nearDensity += WALL_DENSITY * g ** 3
-  })
+  // particle.walls.forEach(neighbor => {
+  //   const g = gradient(particle, neighbor)
+  //   if (!g) return
+  //   density += WALL_DENSITY * g ** 2
+  //   nearDensity += WALL_DENSITY * g ** 3
+  // })
 
-  particle.pressure = STIFFNESS * (density - REST_DENSITY)
-  particle.nearPressure = STIFFNESS_NEAR * nearDensity
+  particle.pressure = (density - REST_DENSITY)
+  particle.nearPressure = nearDensity
 }
 
 const relax = (particle, dt) => {
@@ -188,23 +186,9 @@ const relax = (particle, dt) => {
     const d = unit.multiplyScalar(dt * dt).multiplyScalar(magnitude)
     particle.position.addScaledVector(d, -.5)
     neighbor.position.addScaledVector(d, .5)
-    
-    // resolve collisions
-    contain(particle)
-    contain(neighbor)
+    contain(neighbor, dt)
   })
-
-  particle.walls.forEach(wall => {
-    const g = gradient(particle, wall)
-    if (!g) return
-    const magnitude = particle.pressure * g + particle.nearPressure * g ** 2
-    const unit = wall.position.clone().sub(particle.position).normalize()
-    const d = unit.multiplyScalar(dt * dt).multiplyScalar(magnitude)
-    particle.position.addScaledVector(d, -1)
-    
-    // resolve collisions
-    contain(particle)
-  })
+  contain(particle, dt)
 }
 
 const gradient = (particle, neighbor) => {
@@ -212,10 +196,30 @@ const gradient = (particle, neighbor) => {
   return Math.max(0, 1 - (difference.length() / INTERACTION_RADIUS))
 }
 
-const contain = particle => {
+const contain = (particle, dt) => {
+
+  let dx = 0
+  let dy = 0
+
+  if (particle.position.x < boundingArea.w / -2 + INTERACTION_RADIUS) {
+    const q = 1 - Math.abs((particle.position.x - (boundingArea.w / -2)) / INTERACTION_RADIUS)
+    dx += .1 * q * q * dt
+  } else if (particle.position.x > boundingArea.w / 2 - INTERACTION_RADIUS) {
+    const q = 1 - Math.abs((particle.position.x - (boundingArea.w / 2)) / INTERACTION_RADIUS)
+    dx -= .1 * q * q * dt
+  }
+
+  if (particle.position.y < boundingArea.h / -2 + INTERACTION_RADIUS) {
+    const q = 1 - Math.abs((particle.position.y - (boundingArea.h / -2)) / INTERACTION_RADIUS)
+    dy += .1 * q * q * dt
+  } else if (particle.position.y > boundingArea.h / 2 - INTERACTION_RADIUS) {
+    const q = 1 - Math.abs((particle.position.y - (boundingArea.h / 2)) / INTERACTION_RADIUS)
+    dy -= .1 * q * q * dt
+  }
+
   particle.position.set(
-    Math.max(boundingArea.w / -2 + .01, Math.min(boundingArea.w / 2 - .01, particle.position.x)),
-    Math.max(boundingArea.h / -2 + .01, Math.min(boundingArea.h / 2 - .01, particle.position.y))
+    Math.max(boundingArea.w / -2 + .01, Math.min(boundingArea.w / 2 - .01, particle.position.x + dx)),
+    Math.max(boundingArea.h / -2 + .01, Math.min(boundingArea.h / 2 - .01, particle.position.y + dy))
   )
 }
 
@@ -234,9 +238,16 @@ const render = auto => {
   simulate()
   renderer.render(scene, camera)
   // gcc.capture(canvas);
+
 }
 
 render(true)
 
 document.addEventListener('keyup', e => e.which === 32 && render())
 document.addEventListener('keyup', e => e.which === 32 && console.log(particles))
+
+window.addEventListener('mousemove', e => {
+  const x = (-.5 + e.clientX / window.innerWidth) * boundingArea.w
+  const y = -(-.5 + e.clientY / window.innerHeight) * boundingArea.h
+  mouse.set(x, y)
+})
