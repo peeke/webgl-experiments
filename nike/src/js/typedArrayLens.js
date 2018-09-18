@@ -1,32 +1,29 @@
-const makeLens = (typedArray, size, i) => j => ({
-  get: () => typedArray[i * size + j],
-  set: value => typedArray[i * size + j] = value
-})
+class Lens {
 
-const makeLenses = (typedArray, properties) => {
+  constructor(properties, size) {
+    this.size = size
+    this.blockSize = properties.length
+    this.data = new Float32Array(this.blockSize * size)
+    this.propIndexes = properties.reduce((result, prop, index) => {
+      result[prop] = index
+      return result
+    }, {})
+  }
 
-  const size = properties.length
-  const lenses = properties.reduce((result, property, i) => {
-    result[property] = makeLens(typedArray, size, i)
-    return result
-  }, {})
-  
-  Object.assign(lenses, {
-    forEach: fn => {
-      const l = typedArray.length / size
-      for (let i = 0; i < l; i++) {
-        fn(
-          i, 
-          prop => lenses[prop](i).get(), 
-          (prop, value) => lenses[prop](i).set(value)
-        )
-      }
-    },
-    get: (i, prop) => lenses[prop](i).get(),
-    set: (i, prop, value) => lenses[prop](i).set(value)
-  })
+  forEach(fn) {
+    for (let i = 0; i < this.size; i++) {
+      fn(i)
+    }
+  }
 
-  return lenses
+  get(i, prop){
+    return this.data[i * this.blockSize + this.propIndexes[prop]]
+  }
+
+  set(i, prop, value) {
+    this.data[i * this.blockSize + this.propIndexes[prop]] = value
+  }
+
 }
 
-export { makeLens, makeLenses }
+export default Lens

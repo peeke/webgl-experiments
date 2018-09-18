@@ -13,15 +13,14 @@ import {
 } from "three"
 
 import SpatialHashMap from '../../js/SpatialHashMap'
-import { makeLenses } from '../../js/typedArrayLens'
 import { multiplyScalar, length, lengthSq, add, subtract, dot, unit } from '../../js/2dVectorOperations'
 
-const PARTICLE_COUNT = 1200
+const PARTICLE_COUNT = 3000
 
-const REST_DENSITY = 40
-const INTERACTION_RADIUS = 5
-const GRAVITY = [0, -70]
-const VISCOSITY = 1
+const REST_DENSITY = 3
+const INTERACTION_RADIUS = 2
+const GRAVITY = [0, -100]
+const VISCOSITY = .01
 
 console.log({
   PARTICLE_COUNT,
@@ -31,10 +30,18 @@ console.log({
   VISCOSITY
 })
 
-const properties = ['x', 'y', 'oldX', 'oldY', 'vx', 'vy', 'p', 'pNear', 'color']
-const data = new Float32Array(PARTICLE_COUNT * properties.length);
-const particles = makeLenses(data, properties)
-const meshes = []
+const vars = {
+  x: new Float32Array(PARTICLE_COUNT),
+  y: new Float32Array(PARTICLE_COUNT),
+  oldX: new Float32Array(PARTICLE_COUNT),
+  oldY: new Float32Array(PARTICLE_COUNT),
+  vx: new Float32Array(PARTICLE_COUNT),
+  vy: new Float32Array(PARTICLE_COUNT),
+  p: new Float32Array(PARTICLE_COUNT),
+  pNear: new Float32Array(PARTICLE_COUNT),
+  color: new Uint32Array(PARTICLE_COUNT),
+  mesh: []
+}
 
 const canvas = document.querySelector("#canvas")
 const dpr = window.devicePixelRatio
@@ -52,6 +59,10 @@ renderer.setPixelRatio(window.devicePixelRatio)
 renderer.setSize(width, height)
 
 const viewportHeight = calculateViewportHeight(75, 30)
+const boundingArea = {
+  w: viewportHeight * .66,
+  h: viewportHeight * .66
+}
 
 const screenToWorldSpace = ({ x, y }) => ({
   x: (-.5 + x / width) * viewportHeight / height * width,
@@ -64,122 +75,103 @@ scene.add(light)
 
 const mouse = [-1000, -1000];
 
-particles.forEach((i, get, set) => {
-  set('x', Math.sign(-.5 + Math.random()) * (.5 + Math.random() / 2) * viewportHeight * .33)
-  set('y', viewportHeight * -.33 + Math.random() * viewportHeight * .66)
-  set('oldX', get('x'))
-  set('oldY', get('y'))
-  set('vx', 0)
-  set('vy', 0)
-  set('color', Math.random() * 0xffffff)
-})
+for (let i = 0; i < PARTICLE_COUNT; i++) {
+  vars.x[i] = boundingArea.w * -.5 + Math.random() * boundingArea.w
+  vars.y[i] = boundingArea.h * -.5 + Math.random() * boundingArea.h
+  vars.oldX[i] = vars.x[i]
+  vars.oldY[i] = vars.y[i]
+  vars.vx[i] = 0
+  vars.vy[i] = 0
+  vars.color[i] = Math.random() * 0xffffff
+
+  const geometry = new SphereGeometry(viewportHeight / height * 3, 2, 2)
+  const material = new MeshBasicMaterial({ color: vars.color[i] })
+  const sphere = new Mesh(geometry, material)
+  sphere.position.x = vars.x[i]
+  sphere.position.y = vars.y[i]
+  vars.mesh[i] = sphere
+  scene.add(sphere)
+}
 
 const hashMap = new SpatialHashMap(INTERACTION_RADIUS / 10)
-
-particles.forEach((i, get) => {
-  const color = get('color')
-  const x = get('x')
-  const y = get('y')
-  const geometry = new SphereGeometry(viewportHeight / height * 3, 2, 2)
-  const material = new MeshBasicMaterial({ color })
-  const sphere = new Mesh(geometry, material)
-  sphere.position.x = x
-  sphere.position.y = y
-  meshes[i] = sphere
-  scene.add(sphere)
-})
-
-const boundingArea = {
-  w: viewportHeight * .66,
-  h: viewportHeight * .66
-}
 
 const simulate = () => {
   const dt = 60 / 1000
   
   hashMap.clear()
 
-  particles.forEach((i, get, set) => {
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
 
     applyGlobalForces(i, dt)
-
-    let x = get('x')
-    let y = get('y')
     
-    set('oldX', x)
-    set('oldY', y)
-
-    x += get('vx') * dt
-    y += get('vy') * dt
+    vars.oldX[i] = vars.x[i]
+    vars.oldY[i] = vars.y[i]
     
-    set('x', x)
-    set('y', y)
+    vars.x[i] += vars.vx[i] * dt
+    vars.y[i] += vars.vy[i] * dt
     
-    hashMap.add(x, y, i)
+    hashMap.add(vars.x[i], vars.y[i], i)
 
-  })
+  }
 
-  particles.forEach((i, get) => {
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
 
     const neighbors = hashMap
-      .query(get('x'), get('y'), INTERACTION_RADIUS)
+      .query(vars.x[i], vars.y[i], INTERACTION_RADIUS)
       .filter(j => i !== j)
-    
-    applyViscosity(i, neighbors, dt)
+
+    // applyViscosity(i, neighbors, dt)
     
     updateDensities(i, neighbors)
     
     // perform double density relaxation
     relax(i, neighbors, dt)
 
-  })
+    contain(i, dt)
 
-  particles.forEach((i, get) => {
+  }
+
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
     
     // Calculate new velocities
     calculateVelocity(i)
 
     // Update
-    const mesh = meshes[i]
-    mesh.position.x = get('x')
-    mesh.position.y = get('y')
+    const mesh = vars.mesh[i]
+    mesh.position.x = vars.x[i]
+    mesh.position.y = vars.y[i]
     mesh.verticesNeedUpdate = true
 
-  })
+  }
 
 }
 
 const applyGlobalForces = (i, dt) => {
-  const x = particles.get(i, 'x')
-  const y = particles.get(i, 'y')
-  const vx = particles.get(i, 'vx')
-  const vy = particles.get(i, 'vy')
-
-  const fromMouse = subtract([x, y], mouse)
+  const fromMouse = subtract([vars.x[i], vars.y[i]], mouse)
   const scalar = Math.min(500, 4000 / lengthSq(fromMouse))
   const mouseForce = multiplyScalar(unit(fromMouse), scalar)
 
-  const [dvx, dvy] = multiplyScalar(add(GRAVITY, mouseForce), dt)
+  const dv = multiplyScalar(add(GRAVITY, mouseForce), dt)
 
-  particles.set(i, 'vx', vx + dvx)
-  particles.set(i, 'vy', vy + dvy)
+  vars.vx[i] += dv[0]
+  vars.vy[i] += dv[1]
 }
 
 const applyViscosity = (i, neighbors, dt) => {
-  const x = particles.get(i, 'x')
-  const y = particles.get(i, 'y')
+  const x = vars.x[i]
+  const y = vars.y[i]
 
   neighbors.forEach(j => {
     if (i >= j) return
     const g = gradient(i, j)
     if (!g) return
 
-    const nx = particles.get(j, 'x')
-    const ny = particles.get(j, 'y')
-    const vx = particles.get(i, 'vx')
-    const vy = particles.get(i, 'vy')
-    const nvx = particles.get(j, 'vx')
-    const nvy = particles.get(j, 'vy')
+    const nx = vars.x[j]
+    const ny = vars.y[j]
+    const vx = vars.vx[i]
+    const vy = vars.vy[i]
+    const nvx = vars.vx[j]
+    const nvy = vars.vy[j]
 
     const unitPosition = unit(subtract([nx, ny], [x, y]))
     const u = dot(subtract([vx, vy], [nvx, nvy]), unitPosition)
@@ -197,10 +189,10 @@ const applyViscosity = (i, neighbors, dt) => {
       ndvy += impulse[1] * .5
     }
     
-    particles.set(i, 'vx', vx + dvx)
-    particles.set(i, 'vy', vy + dvy)
-    particles.set(j, 'vx', nvx + ndvx)
-    particles.set(j, 'vy', nvy + ndvy)
+    vars.vx[i] = vx + dvx
+    vars.vy[i] = vy + dvy
+    vars.vx[j] = nvx + ndvx
+    vars.vy[j] = nvy + ndvy
   })  
 }
 
@@ -215,17 +207,17 @@ const updateDensities = (i, neighbors) => {
     nearDensity += g ** 3
   })
 
-  particles.set(i, 'p', .04 * (density - REST_DENSITY))
-  particles.set(i, 'pNear', nearDensity)
+  vars.p[i] = .04 * (density - REST_DENSITY)
+  vars.pNear[i] = nearDensity
 }
 
 const relax = (i, neighbors, dt) => {
   if (!neighbors.length) return
 
-  const pressure = particles.get(i, 'p')
-  const nearPressure = particles.get(i, 'pNear')
-  const x = particles.get(i, 'x')
-  const y = particles.get(i, 'y')
+  const pressure = vars.p[i]
+  const nearPressure = vars.pNear[i]
+  const x = vars.x[i]
+  const y = vars.y[i]
   let dx = 0
   let dy = 0
 
@@ -233,8 +225,8 @@ const relax = (i, neighbors, dt) => {
     const g = gradient(i, j)
     if (!g) return
 
-    const nx = particles.get(j, 'x')
-    const ny = particles.get(j, 'y')
+    const nx = vars.x[j]
+    const ny = vars.y[j]
 
     const magnitude = pressure * g + nearPressure * g ** 2
     const u = unit(subtract([nx, ny], [x, y]))
@@ -243,82 +235,79 @@ const relax = (i, neighbors, dt) => {
     dx += d[0] * -.5
     dy += d[1] * -.5
 
-    particles.set(j, 'x', nx + d[0] * .5)
-    particles.set(j, 'y', ny + d[1] * .5)
+    vars.x[j] = nx + d[0] * .5
+    vars.y[j] = ny + d[1] * .5
     
     contain(j, dt)
   })
 
-  particles.set(i, 'x', x + dx)
-  particles.set(i, 'y', y + dy)
-
-  contain(i, dt)
+  vars.x[i] = x + dx
+  vars.y[i] = y + dy
 }
 
 const gradient = (i, j) => {
-  const x = particles.get(i, 'x')
-  const y = particles.get(i, 'y')
-  const nx = particles.get(j, 'x')
-  const ny = particles.get(j, 'y')
+  const x = vars.x[i]
+  const y = vars.y[i]
+  const nx = vars.x[j]
+  const ny = vars.y[j]
   const d = subtract([nx, ny], [x, y])
   return Math.max(0, 1 - length(d) / INTERACTION_RADIUS)
 }
 
 const contain = (i, dt) => {
 
-  const x = particles.get(i, 'x')
-  const y = particles.get(i, 'y')
+  const x = vars.x[i]
+  const y = vars.y[i]
 
   let dx = 0
   let dy = 0
 
   if (x < boundingArea.w / -2 + INTERACTION_RADIUS) {
     const q = 1 - Math.abs((x - (boundingArea.w / -2)) / INTERACTION_RADIUS)
-    dx += .2 * q * q * dt
+    dx += .05 * q * q * dt
   } else if (x > boundingArea.w / 2 - INTERACTION_RADIUS) {
     const q = 1 - Math.abs((x - (boundingArea.w / 2)) / INTERACTION_RADIUS)
-    dx -= .2 * q * q * dt
+    dx -= .05 * q * q * dt
   }
 
   if (y < boundingArea.h / -2 + INTERACTION_RADIUS) {
     const q = 1 - Math.abs((y - (boundingArea.h / -2)) / INTERACTION_RADIUS)
-    dy += .2 * q * q * dt
+    dy += .05 * q * q * dt
   } else if (y > boundingArea.h / 2 - INTERACTION_RADIUS) {
     const q = 1 - Math.abs((y - (boundingArea.h / 2)) / INTERACTION_RADIUS)
-    dy -= .2 * q * q * dt
+    dy -= .05 * q * q * dt
   }
 
-  particles.set(i, 'x', Math.max(boundingArea.w / -2 + .01, Math.min(boundingArea.w / 2 - .01, x + dx)))
-  particles.set(i, 'y', Math.max(boundingArea.h / -2 + .01, Math.min(boundingArea.h / 2 - .01, y + dy)))
+  vars.x[i] = Math.max(boundingArea.w / -2 + .01, Math.min(boundingArea.w / 2 - .01, x + dx))
+  vars.y[i] = Math.max(boundingArea.h / -2 + .01, Math.min(boundingArea.h / 2 - .01, y + dy))
 }
 
 const calculateVelocity = i => {
-  const x = particles.get(i, 'x')
-  const y = particles.get(i, 'y')
-  const oldX = particles.get(i, 'oldX')
-  const oldY = particles.get(i, 'oldY')
+  const x = vars.x[i]
+  const y = vars.y[i]
+  const oldX = vars.oldX[i]
+  const oldY = vars.oldY[i]
   
   const v = subtract([x, y], [oldX, oldY])
   
-  particles.set(i, 'vx', v[0])
-  particles.set(i, 'vy', v[1])
+  vars.vx[i] = v[0]
+  vars.vy[i] = v[1]
 }
 
 const t0 = performance.now()
 const runFor = 10000
 
-const render = auto => {
-  const shouldContinue = performance.now() - t0 < runFor
-  if (auto && shouldContinue) {
-    requestAnimationFrame(render)
-  }
-  simulate()
-  renderer.render(scene, camera)
-  // gcc.capture(canvas);
+let animationFrame
 
+const render = () => renderer.render(scene, camera)
+const loop = () => {
+  animationFrame && cancelAnimationFrame(animationFrame)
+  requestAnimationFrame(render)
+  simulate()
 }
 
-render(true)
+const interval = setInterval(loop, 1000 / 60)
+setTimeout(() => clearInterval(interval), runFor)
 
 document.addEventListener('keyup', e => e.which === 32 && render())
 document.addEventListener('keyup', e => e.which === 32 && console.log(particles))
