@@ -242,7 +242,7 @@ const relax = (i, neighbors, dt) => {
     const u = unitApprox(subtract([nx, ny], [x, y]))
     const d = multiplyScalar(u, dt * dt * magnitude)
 
-    const f = vars.color[i] === vars.color[j] ? .49 : .51
+    const f = (vars.color[i] !== (vars.color[j] + 1) % colors.length) ? .49 : .51
     
     dx += d[0] * -f
     dy += d[1] * -f
