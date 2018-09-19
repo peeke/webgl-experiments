@@ -15,15 +15,15 @@ import {
 import SpatialHashMap from '../../js/SpatialHashMap'
 import { multiplyScalar, length, lengthSq, add, subtract, dot, unit, unitApprox } from '../../js/2dVectorOperations'
 
-const PARTICLE_COUNT = 1500
+const PARTICLE_COUNT = 2000
 
 let counter = 0
 
-const STIFFNESS = .4
+const STIFFNESS = .75
 const STIFFNESS_NEAR = 1
 const REST_DENSITY = 6
 const WALL_PRESSURE = 6
-const INTERACTION_RADIUS = 2
+const INTERACTION_RADIUS = 2.5
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2
 const GRAVITY = [0, -15]
 const VISCOSITY = .01
@@ -45,9 +45,11 @@ const vars = {
   vy: new Float32Array(PARTICLE_COUNT),
   p: new Float32Array(PARTICLE_COUNT),
   pNear: new Float32Array(PARTICLE_COUNT),
-  color: new Uint32Array(PARTICLE_COUNT),
+  color: new Uint8Array(PARTICLE_COUNT),
   mesh: []
 }
+
+const colors = [0xff4e91, 0xffe04e, 0x3568e5]
 
 const canvas = document.querySelector("#canvas")
 const dpr = window.devicePixelRatio
@@ -89,10 +91,10 @@ for (let i = 0; i < PARTICLE_COUNT; i++) {
   vars.oldY[i] = vars.y[i]
   vars.vx[i] = 0
   vars.vy[i] = 0
-  vars.color[i] = Math.random() * 0xffffff
+  vars.color[i] = Math.floor(Math.random() * 3)
 
   const geometry = new SphereGeometry(viewportHeight / height * 3, 2, 2)
-  const material = new MeshBasicMaterial({ color: vars.color[i] })
+  const material = new MeshBasicMaterial({ color: colors[vars.color[i]] })
   const sphere = new Mesh(geometry, material)
   sphere.position.x = vars.x[i]
   sphere.position.y = vars.y[i]
@@ -239,12 +241,14 @@ const relax = (i, neighbors, dt) => {
     const magnitude = pressure * g + nearPressure * g ** 2
     const u = unitApprox(subtract([nx, ny], [x, y]))
     const d = multiplyScalar(u, dt * dt * magnitude)
-    
-    dx += d[0] * -.5
-    dy += d[1] * -.5
 
-    vars.x[j] = nx + d[0] * .5
-    vars.y[j] = ny + d[1] * .5
+    const f = vars.color[i] === vars.color[j] ? .49 : .51
+    
+    dx += d[0] * -f
+    dy += d[1] * -f
+
+    vars.x[j] = nx + d[0] * f
+    vars.y[j] = ny + d[1] * f
     
     // contain(j, dt)
   })
@@ -270,46 +274,19 @@ const gradient = (a, b) => {
 
 const contain = (i, dt) => {
 
-  const offset = .00001//Math.random() * .1
+  const offset = .001
 
-  // const x = vars.x[i] = Math.max(boundingArea.w / -2 + offset, Math.min(boundingArea.w / 2 - offset, vars.x[i]))
-  // const y = vars.y[i] = Math.max(boundingArea.h / -2 + offset, Math.min(boundingArea.h / 2 - offset, vars.y[i]))
-  
   if (vars.x[i] < boundingArea.w / -2) {
-    const dx = boundingArea.w / -2 - vars.x[i]
-    vars.x[i] += dx * 1.6
+    vars.x[i] = boundingArea.w / -2 + offset
   } else if (vars.x[i] > boundingArea.w / 2) {
-    const dx = boundingArea.w / 2 - vars.x[i]
-    vars.x[i] += dx * 1.6
+    vars.x[i] = boundingArea.w / 2 - offset
   }
 
   if (vars.y[i] < boundingArea.h / -2) {
-    const dy = boundingArea.h / -2 - vars.y[i]
-    vars.y[i] += dy * 1.6
+    vars.y[i] = boundingArea.h / -2 + offset
   } else if (vars.y[i] > boundingArea.h / 2) {
-    const dy = boundingArea.h / 2 - vars.y[i]
-    vars.y[i] += dy * 1.6
+    vars.y[i] = boundingArea.h / 2 - offset
   }
-
-  // Old method
-
-  // if (x === 0 && y === 0) return
-
-  // const nx = boundingArea.w / 2 * Math.sign(x)
-  // const ny = boundingArea.h / 2 * Math.sign(y)
-  // const walls = [[x, ny], [nx, y]]
-
-  // walls.forEach(wall => {
-  //   const g = gradient([x, y], wall)
-  //   if (g === 0) return
-  
-  //   const magnitude = WALL_PRESSURE * g ** 2
-  //   const u = unitApprox(subtract(wall, [x, y]))
-  //   const d = multiplyScalar(u, dt * dt * magnitude)
-  
-  //   vars.x[i] -= d[0]
-  //   vars.y[i] -= d[1]
-  // })
   
 }
 
