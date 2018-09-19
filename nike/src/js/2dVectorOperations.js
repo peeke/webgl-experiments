@@ -19,7 +19,9 @@ const multiplyScalar = (vec, scalar) => {
 }
 
 const unit = vec => {
-  return multiplyScalar(vec, 1 / length(vec))
+  const l = length(vec)
+  if (l === 0) return [0, 0]
+  return multiplyScalar(vec, 1 / l)
 }
 
 const dot = (vec1, vec2) => {

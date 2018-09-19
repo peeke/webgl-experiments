@@ -15,11 +15,17 @@ import {
 import SpatialHashMap from '../../js/SpatialHashMap'
 import { multiplyScalar, length, lengthSq, add, subtract, dot, unit } from '../../js/2dVectorOperations'
 
-const PARTICLE_COUNT = 3000
+const PARTICLE_COUNT = 1500
 
-const REST_DENSITY = 3
+let counter = 0
+
+const STIFFNESS = .4
+const STIFFNESS_NEAR = 1
+const REST_DENSITY = 4
+const WALL_PRESSURE = 1.5
 const INTERACTION_RADIUS = 2
-const GRAVITY = [0, -100]
+const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2
+const GRAVITY = [0, -5]
 const VISCOSITY = .01
 
 console.log({
@@ -74,6 +80,7 @@ light.position.set(20, 10, 30)
 scene.add(light)
 
 const mouse = [-1000, -1000];
+let mouseDown = false
 
 for (let i = 0; i < PARTICLE_COUNT; i++) {
   vars.x[i] = boundingArea.w * -.5 + Math.random() * boundingArea.w
@@ -93,19 +100,18 @@ for (let i = 0; i < PARTICLE_COUNT; i++) {
   scene.add(sphere)
 }
 
-const hashMap = new SpatialHashMap(INTERACTION_RADIUS / 10)
+const hashMap = new SpatialHashMap(boundingArea.w / 2, boundingArea.w / 4 / INTERACTION_RADIUS)
 
-const simulate = () => {
-  const dt = 60 / 1000
+const simulate = dt => {
   
   hashMap.clear()
-
+  
   for (let i = 0; i < PARTICLE_COUNT; i++) {
 
-    applyGlobalForces(i, dt)
-    
     vars.oldX[i] = vars.x[i]
     vars.oldY[i] = vars.y[i]
+
+    applyGlobalForces(i, dt)
     
     vars.x[i] += vars.vx[i] * dt
     vars.y[i] += vars.vy[i] * dt
@@ -119,6 +125,7 @@ const simulate = () => {
     const neighbors = hashMap
       .query(vars.x[i], vars.y[i], INTERACTION_RADIUS)
       .filter(j => i !== j)
+      .map(j => ([j, particleGradient(i, j)]))
 
     // applyViscosity(i, neighbors, dt)
     
@@ -134,7 +141,7 @@ const simulate = () => {
   for (let i = 0; i < PARTICLE_COUNT; i++) {
     
     // Calculate new velocities
-    calculateVelocity(i)
+    calculateVelocity(i, dt)
 
     // Update
     const mesh = vars.mesh[i]
@@ -147,11 +154,16 @@ const simulate = () => {
 }
 
 const applyGlobalForces = (i, dt) => {
-  const fromMouse = subtract([vars.x[i], vars.y[i]], mouse)
-  const scalar = Math.min(500, 4000 / lengthSq(fromMouse))
-  const mouseForce = multiplyScalar(unit(fromMouse), scalar)
+  let force = GRAVITY
 
-  const dv = multiplyScalar(add(GRAVITY, mouseForce), dt)
+  if (mouseDown) {
+    const fromMouse = subtract([vars.x[i], vars.y[i]], mouse)
+    const scalar = Math.min(100, (1000 / lengthSq(fromMouse)))
+    const mouseForce = multiplyScalar(unit(fromMouse), scalar)
+    force = add(force, mouseForce)
+  }
+
+  const dv = multiplyScalar(force, dt)
 
   vars.vx[i] += dv[0]
   vars.vy[i] += dv[1]
@@ -161,9 +173,8 @@ const applyViscosity = (i, neighbors, dt) => {
   const x = vars.x[i]
   const y = vars.y[i]
 
-  neighbors.forEach(j => {
+  neighbors.forEach(([j, g]) => {
     if (i >= j) return
-    const g = gradient(i, j)
     if (!g) return
 
     const nx = vars.x[j]
@@ -200,19 +211,17 @@ const updateDensities = (i, neighbors) => {
   let density = 0
   let nearDensity = 0
 
-  neighbors.forEach(j => {
-    const g = gradient(i, j)
+  neighbors.forEach(([j, g]) => {
     if (!g) return
     density += g ** 2
     nearDensity += g ** 3
   })
 
-  vars.p[i] = .04 * (density - REST_DENSITY)
-  vars.pNear[i] = nearDensity
+  vars.p[i] = STIFFNESS * (density - REST_DENSITY)
+  vars.pNear[i] = STIFFNESS_NEAR * nearDensity
 }
 
 const relax = (i, neighbors, dt) => {
-  if (!neighbors.length) return
 
   const pressure = vars.p[i]
   const nearPressure = vars.pNear[i]
@@ -221,8 +230,7 @@ const relax = (i, neighbors, dt) => {
   let dx = 0
   let dy = 0
 
-  neighbors.forEach(j => {
-    const g = gradient(i, j)
+  neighbors.forEach(([j, g]) => {
     if (!g) return
 
     const nx = vars.x[j]
@@ -245,75 +253,86 @@ const relax = (i, neighbors, dt) => {
   vars.y[i] = y + dy
 }
 
-const gradient = (i, j) => {
-  const x = vars.x[i]
-  const y = vars.y[i]
-  const nx = vars.x[j]
-  const ny = vars.y[j]
-  const d = subtract([nx, ny], [x, y])
-  return Math.max(0, 1 - length(d) / INTERACTION_RADIUS)
+const particleGradient = (i, j) => {
+  return gradient([vars.x[i], vars.y[i]], [vars.x[j], vars.y[j]])
+}
+
+const gradient = (a, b) => {
+  const lsq = lengthSq(subtract([a[0], a[1]], [b[0], b[1]]))
+  if (lsq > INTERACTION_RADIUS_SQ) return 0
+  return Math.max(0, 1 - Math.sqrt(lsq) / INTERACTION_RADIUS)
 }
 
 const contain = (i, dt) => {
 
-  const x = vars.x[i]
-  const y = vars.y[i]
+  const x = vars.x[i] = Math.max(boundingArea.w / -2 + .001, Math.min(boundingArea.w / 2 - .001, vars.x[i]))
+  const y = vars.y[i] = Math.max(boundingArea.h / -2 + .001, Math.min(boundingArea.h / 2 - .001, vars.y[i]))
+  
+  if (x === 0 && y === 0) return
 
-  let dx = 0
-  let dy = 0
+  const nx = boundingArea.w / 2 * Math.sign(x)
+  const ny = boundingArea.h / 2 * Math.sign(y)
+  const walls = [[x, ny], [nx, y]]
 
-  if (x < boundingArea.w / -2 + INTERACTION_RADIUS) {
-    const q = 1 - Math.abs((x - (boundingArea.w / -2)) / INTERACTION_RADIUS)
-    dx += .05 * q * q * dt
-  } else if (x > boundingArea.w / 2 - INTERACTION_RADIUS) {
-    const q = 1 - Math.abs((x - (boundingArea.w / 2)) / INTERACTION_RADIUS)
-    dx -= .05 * q * q * dt
-  }
-
-  if (y < boundingArea.h / -2 + INTERACTION_RADIUS) {
-    const q = 1 - Math.abs((y - (boundingArea.h / -2)) / INTERACTION_RADIUS)
-    dy += .05 * q * q * dt
-  } else if (y > boundingArea.h / 2 - INTERACTION_RADIUS) {
-    const q = 1 - Math.abs((y - (boundingArea.h / 2)) / INTERACTION_RADIUS)
-    dy -= .05 * q * q * dt
-  }
-
-  vars.x[i] = Math.max(boundingArea.w / -2 + .01, Math.min(boundingArea.w / 2 - .01, x + dx))
-  vars.y[i] = Math.max(boundingArea.h / -2 + .01, Math.min(boundingArea.h / 2 - .01, y + dy))
+  walls.forEach(wall => {
+    const g = gradient([x, y], wall)
+    if (g === 0) return
+  
+    const magnitude = WALL_PRESSURE * g ** 2
+    const u = unit(subtract(wall, [x, y]))
+    const d = multiplyScalar(u, dt * dt * magnitude)
+  
+    vars.x[i] += d[0] * -.5
+    vars.y[i] += d[1] * -.5
+  })
+  
 }
 
-const calculateVelocity = i => {
+const calculateVelocity = (i, dt) => {
   const x = vars.x[i]
   const y = vars.y[i]
   const oldX = vars.oldX[i]
   const oldY = vars.oldY[i]
   
-  const v = subtract([x, y], [oldX, oldY])
-  
+  const v = multiplyScalar(subtract([x, y], [oldX, oldY]), 1 / dt)
+
   vars.vx[i] = v[0]
   vars.vy[i] = v[1]
 }
 
 const t0 = performance.now()
-const runFor = 10000
+const runFor = 15000
 
 let animationFrame
 
-const render = () => renderer.render(scene, camera)
+let frame
+let tPrev
+
 const loop = () => {
-  animationFrame && cancelAnimationFrame(animationFrame)
-  requestAnimationFrame(render)
-  simulate()
+  renderer.render(scene, camera)
+  frame = requestAnimationFrame(loop)
+  const t = performance.now()
+  simulate((t - tPrev) / 1000)
+  tPrev = t
 }
 
-const interval = setInterval(loop, 1000 / 60)
-setTimeout(() => clearInterval(interval), runFor)
+const start = () => {
+  tPrev = performance.now() - 16
+  exit()
+  loop()
+}
 
-document.addEventListener('keyup', e => e.which === 32 && render())
-document.addEventListener('keyup', e => e.which === 32 && console.log(particles))
+const exit = () => {
+  cancelAnimationFrame(frame)
+}
+
+document.addEventListener('keyup', e => e.which === 32 && (frame ? exit() : start()))
 
 window.addEventListener('mousemove', e => {
   const { x, y } = screenToWorldSpace({ x: e.clientX, y: e.clientY })
   mouse[0] = x
   mouse[1] = y
 })
+
+window.addEventListener('mousedown', () => mouseDown = true)
+window.addEventListener('mouseup', () => mouseDown = false)

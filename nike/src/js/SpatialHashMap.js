@@ -1,33 +1,33 @@
 class SpatialHashMap {
 
-  constructor(cellSize) {
-    this._cellSize = cellSize
-    this._buckets = new Map()
+  constructor(rowWidth, cellsInRow) {
+    this.rowWidth = rowWidth
+    this.cellWidth = rowWidth / cellsInRow
+    this.cellsInRow = cellsInRow
+    this.grid = {}
   }
 
   clear() {
-    this._buckets.clear()
+    this.grid = {}
   }
 
   add(x, y, obj) {
-    const id = this.id(this.x(x), this.y(y))
-    const bucketExists = this._buckets.has(id)
-    const bucketValue = bucketExists ? this._buckets.get(id) : []
-    bucketValue.push(obj)
-    this._buckets.set(id, bucketValue)
+    const index = this.index(x, y)
+    if (this.grid[index]) {
+      this.grid[index].push(obj)
+    } else {
+      this.grid[index] = [obj]
+    }
   }
 
   query(x, y, offset) {
-    offset = Math.ceil(offset / this._cellSize)
-    x = this.x(x)
-    y = this.y(y)
     const result = []
 
-    for (let i = x - offset; i <= x + offset; i++) {
-      for (let j = y - offset; j <= y + offset; j++) {
-        const id = this.id(i, j)
-        if (this._buckets.has(id)) {
-          result.push(...this._buckets.get(id))
+    for (let i = x - offset; i <= x + offset; i += this.cellWidth) {
+      for (let j = y - offset; j <= y + offset; j += this.cellWidth) {
+        const index = this.index(i, j)
+        if (this.grid[index]) {
+          result.push.apply(result, this.grid[index]);
         }
       }
     }
@@ -35,16 +35,8 @@ class SpatialHashMap {
     return result
   }
 
-  x(x) {
-    return Math.floor(x / this._cellSize)
-  }
-
-  y(y) {
-    return Math.floor(y / this._cellSize)
-  }
-
-  id(x, y) {
-    return (x + .0001) + 1 / (y + .0001)
+  index(x, y) {
+    return Math.round(x / this.cellWidth) + Math.round(y / this.cellWidth) * this.cellsInRow
   }
 }
 
