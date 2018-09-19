@@ -13,7 +13,7 @@ import {
 } from "three"
 
 import SpatialHashMap from '../../js/SpatialHashMap'
-import { multiplyScalar, length, lengthSq, add, subtract, dot, unit } from '../../js/2dVectorOperations'
+import { multiplyScalar, length, lengthSq, add, subtract, dot, unit, unitApprox } from '../../js/2dVectorOperations'
 
 const PARTICLE_COUNT = 1500
 
@@ -21,11 +21,11 @@ let counter = 0
 
 const STIFFNESS = .4
 const STIFFNESS_NEAR = 1
-const REST_DENSITY = 4
-const WALL_PRESSURE = 1.5
+const REST_DENSITY = 6
+const WALL_PRESSURE = 6
 const INTERACTION_RADIUS = 2
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2
-const GRAVITY = [0, -5]
+const GRAVITY = [0, -15]
 const VISCOSITY = .01
 
 console.log({
@@ -159,7 +159,7 @@ const applyGlobalForces = (i, dt) => {
   if (mouseDown) {
     const fromMouse = subtract([vars.x[i], vars.y[i]], mouse)
     const scalar = Math.min(100, (1000 / lengthSq(fromMouse)))
-    const mouseForce = multiplyScalar(unit(fromMouse), scalar)
+    const mouseForce = multiplyScalar(unitApprox(fromMouse), scalar)
     force = add(force, mouseForce)
   }
 
@@ -184,7 +184,7 @@ const applyViscosity = (i, neighbors, dt) => {
     const nvx = vars.vx[j]
     const nvy = vars.vy[j]
 
-    const unitPosition = unit(subtract([nx, ny], [x, y]))
+    const unitPosition = unitApprox(subtract([nx, ny], [x, y]))
     const u = dot(subtract([vx, vy], [nvx, nvy]), unitPosition)
 
     let dvx = 0
@@ -237,7 +237,7 @@ const relax = (i, neighbors, dt) => {
     const ny = vars.y[j]
 
     const magnitude = pressure * g + nearPressure * g ** 2
-    const u = unit(subtract([nx, ny], [x, y]))
+    const u = unitApprox(subtract([nx, ny], [x, y]))
     const d = multiplyScalar(u, dt * dt * magnitude)
     
     dx += d[0] * -.5
@@ -246,45 +246,70 @@ const relax = (i, neighbors, dt) => {
     vars.x[j] = nx + d[0] * .5
     vars.y[j] = ny + d[1] * .5
     
-    contain(j, dt)
+    // contain(j, dt)
   })
 
-  vars.x[i] = x + dx
-  vars.y[i] = y + dy
+  vars.x[i] += dx
+  vars.y[i] += dy
 }
 
 const particleGradient = (i, j) => {
   return gradient([vars.x[i], vars.y[i]], [vars.x[j], vars.y[j]])
 }
 
+const gradientCache = new Float32Array(Math.ceil(INTERACTION_RADIUS_SQ * 5))
 const gradient = (a, b) => {
   const lsq = lengthSq(subtract([a[0], a[1]], [b[0], b[1]]))
   if (lsq > INTERACTION_RADIUS_SQ) return 0
-  return Math.max(0, 1 - Math.sqrt(lsq) / INTERACTION_RADIUS)
+  const cacheIndex = Math.round(lsq * 5)
+  if (gradientCache[cacheIndex]) return gradientCache[cacheIndex]
+  const g = Math.max(0, 1 - Math.sqrt(lsq) / INTERACTION_RADIUS)
+  gradientCache[cacheIndex] = g
+  return g
 }
 
 const contain = (i, dt) => {
 
-  const x = vars.x[i] = Math.max(boundingArea.w / -2 + .001, Math.min(boundingArea.w / 2 - .001, vars.x[i]))
-  const y = vars.y[i] = Math.max(boundingArea.h / -2 + .001, Math.min(boundingArea.h / 2 - .001, vars.y[i]))
-  
-  if (x === 0 && y === 0) return
+  const offset = .00001//Math.random() * .1
 
-  const nx = boundingArea.w / 2 * Math.sign(x)
-  const ny = boundingArea.h / 2 * Math.sign(y)
-  const walls = [[x, ny], [nx, y]]
+  // const x = vars.x[i] = Math.max(boundingArea.w / -2 + offset, Math.min(boundingArea.w / 2 - offset, vars.x[i]))
+  // const y = vars.y[i] = Math.max(boundingArea.h / -2 + offset, Math.min(boundingArea.h / 2 - offset, vars.y[i]))
+  
+  if (vars.x[i] < boundingArea.w / -2) {
+    const dx = boundingArea.w / -2 - vars.x[i]
+    vars.x[i] += dx * 1.6
+  } else if (vars.x[i] > boundingArea.w / 2) {
+    const dx = boundingArea.w / 2 - vars.x[i]
+    vars.x[i] += dx * 1.6
+  }
 
-  walls.forEach(wall => {
-    const g = gradient([x, y], wall)
-    if (g === 0) return
+  if (vars.y[i] < boundingArea.h / -2) {
+    const dy = boundingArea.h / -2 - vars.y[i]
+    vars.y[i] += dy * 1.6
+  } else if (vars.y[i] > boundingArea.h / 2) {
+    const dy = boundingArea.h / 2 - vars.y[i]
+    vars.y[i] += dy * 1.6
+  }
+
+  // Old method
+
+  // if (x === 0 && y === 0) return
+
+  // const nx = boundingArea.w / 2 * Math.sign(x)
+  // const ny = boundingArea.h / 2 * Math.sign(y)
+  // const walls = [[x, ny], [nx, y]]
+
+  // walls.forEach(wall => {
+  //   const g = gradient([x, y], wall)
+  //   if (g === 0) return
   
-    const magnitude = WALL_PRESSURE * g ** 2
-    const u = unit(subtract(wall, [x, y]))
-    const d = multiplyScalar(u, dt * dt * magnitude)
+  //   const magnitude = WALL_PRESSURE * g ** 2
+  //   const u = unitApprox(subtract(wall, [x, y]))
+  //   const d = multiplyScalar(u, dt * dt * magnitude)
   
-    vars.x[i] += d[0] * -.5
-    vars.y[i] += d[1] * -.5
-  })
+  //   vars.x[i] -= d[0]
+  //   vars.y[i] -= d[1]
+  // })
   
 }
 
@@ -309,11 +334,12 @@ let frame
 let tPrev
 
 const loop = () => {
+  const t = performance.now()
+  simulate(Math.min(33 / 1000, (t - tPrev) / 1000))
+  tPrev = t
+
   renderer.render(scene, camera)
   frame = requestAnimationFrame(loop)
-  const t = performance.now()
-  simulate((t - tPrev) / 1000)
-  tPrev = t
 }
 
 const start = () => {
