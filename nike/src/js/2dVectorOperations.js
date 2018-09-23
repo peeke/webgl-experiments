@@ -25,6 +25,7 @@ const unit = vec => {
 }
 
 const unitApprox = vec => {
+  if (vec[0] === 0 && vec[1] === 0) return [0, 0]
   const ax = Math.abs(vec[0]);
   const ay = Math.abs(vec[1]);
   let ratio = 1 / Math.max(ax, ay)

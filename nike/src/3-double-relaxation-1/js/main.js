@@ -15,14 +15,14 @@ import {
 import SpatialHashMap from '../../js/SpatialHashMap'
 import { multiplyScalar, length, lengthSq, add, subtract, dot, unit, unitApprox } from '../../js/2dVectorOperations'
 
-const PARTICLE_COUNT = 2000
+const PARTICLE_COUNT = 1000
 
 let counter = 0
 
-const STIFFNESS = .75
+const STIFFNESS = .4
 const STIFFNESS_NEAR = 1
-const REST_DENSITY = 6
-const WALL_PRESSURE = 6
+const REST_DENSITY = 8
+const FRICTION = .1
 const INTERACTION_RADIUS = 2.5
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2
 const GRAVITY = [0, -15]
@@ -69,7 +69,11 @@ renderer.setSize(width, height)
 const viewportHeight = calculateViewportHeight(75, 30)
 const boundingArea = {
   w: viewportHeight * .66,
-  h: viewportHeight * .66
+  h: viewportHeight * .66,
+  l: viewportHeight * -.33,
+  r: viewportHeight * .33,
+  t: viewportHeight * .33,
+  b: viewportHeight * -.33,
 }
 
 const screenToWorldSpace = ({ x, y }) => ({
@@ -85,15 +89,15 @@ const mouse = [-1000, -1000];
 let mouseDown = false
 
 for (let i = 0; i < PARTICLE_COUNT; i++) {
-  vars.x[i] = boundingArea.w * -.5 + Math.random() * boundingArea.w
-  vars.y[i] = boundingArea.h * -.5 + Math.random() * boundingArea.h
+  vars.x[i] = boundingArea.l + Math.random() * boundingArea.w
+  vars.y[i] = boundingArea.b + Math.random() * boundingArea.h
   vars.oldX[i] = vars.x[i]
   vars.oldY[i] = vars.y[i]
   vars.vx[i] = 0
   vars.vy[i] = 0
   vars.color[i] = Math.floor(Math.random() * 3)
 
-  const geometry = new SphereGeometry(viewportHeight / height * 3, 2, 2)
+  const geometry = new SphereGeometry(viewportHeight / height * 5, 2, 2)
   const material = new MeshBasicMaterial({ color: colors[vars.color[i]] })
   const sphere = new Mesh(geometry, material)
   sphere.position.x = vars.x[i]
@@ -102,7 +106,7 @@ for (let i = 0; i < PARTICLE_COUNT; i++) {
   scene.add(sphere)
 }
 
-const hashMap = new SpatialHashMap(boundingArea.w / 2, boundingArea.w / 4 / INTERACTION_RADIUS)
+const hashMap = new SpatialHashMap(boundingArea.r, boundingArea.w / 4 / INTERACTION_RADIUS)
 
 const simulate = dt => {
   
@@ -137,9 +141,9 @@ const simulate = dt => {
     relax(i, neighbors, dt)
 
     contain(i, dt)
-
+    
   }
-
+  
   for (let i = 0; i < PARTICLE_COUNT; i++) {
     
     // Calculate new velocities
@@ -169,44 +173,6 @@ const applyGlobalForces = (i, dt) => {
 
   vars.vx[i] += dv[0]
   vars.vy[i] += dv[1]
-}
-
-const applyViscosity = (i, neighbors, dt) => {
-  const x = vars.x[i]
-  const y = vars.y[i]
-
-  neighbors.forEach(([j, g]) => {
-    if (i >= j) return
-    if (!g) return
-
-    const nx = vars.x[j]
-    const ny = vars.y[j]
-    const vx = vars.vx[i]
-    const vy = vars.vy[i]
-    const nvx = vars.vx[j]
-    const nvy = vars.vy[j]
-
-    const unitPosition = unitApprox(subtract([nx, ny], [x, y]))
-    const u = dot(subtract([vx, vy], [nvx, nvy]), unitPosition)
-
-    let dvx = 0
-    let dvy = 0
-    let ndvx = 0
-    let ndvy = 0
-
-    if (u > 0) {
-      const impulse = multiplyScalar(unitPosition, dt * g * VISCOSITY * u * u)
-      dvx += impulse[0] * -.5
-      dvy += impulse[1] * -.5
-      ndvx += impulse[0] * .5
-      ndvy += impulse[1] * .5
-    }
-    
-    vars.vx[i] = vx + dvx
-    vars.vy[i] = vy + dvy
-    vars.vx[j] = nvx + ndvx
-    vars.vy[j] = nvy + ndvy
-  })  
 }
 
 const updateDensities = (i, neighbors) => {
@@ -250,11 +216,22 @@ const relax = (i, neighbors, dt) => {
     vars.x[j] = nx + d[0] * f
     vars.y[j] = ny + d[1] * f
     
-    // contain(j, dt)
   })
 
   vars.x[i] += dx
   vars.y[i] += dy
+
+  if (vars.y[i] < boundingArea.b) {
+    vars.y[i] += (boundingArea.b - vars.y[i]) * (2 - FRICTION)
+  } else if (vars.y[i] > boundingArea.t) {
+    vars.y[i] += (boundingArea.t - vars.y[i]) * (2 - FRICTION)
+  }
+
+  if (vars.x[i] < boundingArea.l) {
+    vars.x[i] += (boundingArea.l - vars.x[i]) * (2 - FRICTION)
+  } else if (vars.x[i] > boundingArea.r) {
+    vars.x[i] += (boundingArea.r - vars.x[i]) * (2 - FRICTION)
+  }
 }
 
 const particleGradient = (i, j) => {
@@ -274,18 +251,16 @@ const gradient = (a, b) => {
 
 const contain = (i, dt) => {
 
-  const offset = .001
-
-  if (vars.x[i] < boundingArea.w / -2) {
-    vars.x[i] = boundingArea.w / -2 + offset
-  } else if (vars.x[i] > boundingArea.w / 2) {
-    vars.x[i] = boundingArea.w / 2 - offset
+  if (vars.x[i] < boundingArea.l) {
+    vars.x[i] = boundingArea.l
+  } else if (vars.x[i] > boundingArea.r) {
+    vars.x[i] = boundingArea.r
   }
 
-  if (vars.y[i] < boundingArea.h / -2) {
-    vars.y[i] = boundingArea.h / -2 + offset
-  } else if (vars.y[i] > boundingArea.h / 2) {
-    vars.y[i] = boundingArea.h / 2 - offset
+  if (vars.y[i] < boundingArea.b) {
+    vars.y[i] = boundingArea.b
+  } else if (vars.y[i] > boundingArea.t) {
+    vars.y[i] = boundingArea.t
   }
   
 }
