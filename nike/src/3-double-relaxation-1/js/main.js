@@ -15,15 +15,16 @@ import {
 import SpatialHashMap from '../../js/SpatialHashMap'
 import { multiplyScalar, length, lengthSq, add, subtract, dot, unit, unitApprox } from '../../js/2dVectorOperations'
 
-const PARTICLE_COUNT = 1000
+const PARTICLE_COUNT = 1250
 
 let counter = 0
 
-const STIFFNESS = .4
+const STIFFNESS = .8
 const STIFFNESS_NEAR = 1
-const REST_DENSITY = 8
+const REST_DENSITY = 5
 const FRICTION = .1
-const INTERACTION_RADIUS = 2.5
+const INTERACTION_RADIUS = 2.25
+const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2
 const GRAVITY = [0, -15]
 const VISCOSITY = .01
@@ -106,7 +107,7 @@ for (let i = 0; i < PARTICLE_COUNT; i++) {
   scene.add(sphere)
 }
 
-const hashMap = new SpatialHashMap(boundingArea.r, boundingArea.w / 4 / INTERACTION_RADIUS)
+const hashMap = new SpatialHashMap(boundingArea.r, boundingArea.w / 4 / INTERACTION_RADIUS, INTERACTION_RADIUS)
 
 const simulate = dt => {
   
@@ -119,6 +120,9 @@ const simulate = dt => {
 
     applyGlobalForces(i, dt)
     
+    vars.vx[i] *= 1 - (.1 * dt)
+    vars.vy[i] *= 1 - (.1 * dt)
+
     vars.x[i] += vars.vx[i] * dt
     vars.y[i] += vars.vy[i] * dt
     
@@ -129,18 +133,15 @@ const simulate = dt => {
   for (let i = 0; i < PARTICLE_COUNT; i++) {
 
     const neighbors = hashMap
-      .query(vars.x[i], vars.y[i], INTERACTION_RADIUS)
-      .filter(j => i !== j)
+      .query(vars.x[i], vars.y[i])
       .map(j => ([j, particleGradient(i, j)]))
 
-    // applyViscosity(i, neighbors, dt)
-    
     updateDensities(i, neighbors)
     
     // perform double density relaxation
     relax(i, neighbors, dt)
 
-    contain(i, dt)
+    bounce(i)
     
   }
   
@@ -180,6 +181,7 @@ const updateDensities = (i, neighbors) => {
   let nearDensity = 0
 
   neighbors.forEach(([j, g]) => {
+    if (i === j) return
     if (!g) return
     density += g ** 2
     nearDensity += g ** 3
@@ -199,6 +201,7 @@ const relax = (i, neighbors, dt) => {
   let dy = 0
 
   neighbors.forEach(([j, g]) => {
+    if (i === j) return
     if (!g) return
 
     const nx = vars.x[j]
@@ -221,17 +224,6 @@ const relax = (i, neighbors, dt) => {
   vars.x[i] += dx
   vars.y[i] += dy
 
-  if (vars.y[i] < boundingArea.b) {
-    vars.y[i] += (boundingArea.b - vars.y[i]) * (2 - FRICTION)
-  } else if (vars.y[i] > boundingArea.t) {
-    vars.y[i] += (boundingArea.t - vars.y[i]) * (2 - FRICTION)
-  }
-
-  if (vars.x[i] < boundingArea.l) {
-    vars.x[i] += (boundingArea.l - vars.x[i]) * (2 - FRICTION)
-  } else if (vars.x[i] > boundingArea.r) {
-    vars.x[i] += (boundingArea.r - vars.x[i]) * (2 - FRICTION)
-  }
 }
 
 const particleGradient = (i, j) => {
@@ -244,25 +236,24 @@ const gradient = (a, b) => {
   if (lsq > INTERACTION_RADIUS_SQ) return 0
   const cacheIndex = Math.round(lsq * 5)
   if (gradientCache[cacheIndex]) return gradientCache[cacheIndex]
-  const g = Math.max(0, 1 - Math.sqrt(lsq) / INTERACTION_RADIUS)
+  const g = Math.max(0, 1 - Math.sqrt(lsq) * INTERACTION_RADIUS_INV)
   gradientCache[cacheIndex] = g
   return g
 }
 
-const contain = (i, dt) => {
+const bounce = i => {
+  const sx = Math.sign(vars.x[i])
+  const sy = Math.sign(vars.y[i])
 
-  if (vars.x[i] < boundingArea.l) {
-    vars.x[i] = boundingArea.l
-  } else if (vars.x[i] > boundingArea.r) {
-    vars.x[i] = boundingArea.r
+  if (vars.x[i] * sx > boundingArea.r) {
+    const f = .5 * Math.max(FRICTION, Math.min(1, Math.abs(vars.vx[i] / INTERACTION_RADIUS)))
+    vars.x[i] += (boundingArea.r * sx - vars.x[i]) * (1.5 + (1 - FRICTION) * f)
   }
 
-  if (vars.y[i] < boundingArea.b) {
-    vars.y[i] = boundingArea.b
-  } else if (vars.y[i] > boundingArea.t) {
-    vars.y[i] = boundingArea.t
+  if (vars.y[i] * sy > boundingArea.t) {
+    const f = .5 * Math.max(FRICTION, Math.min(1, Math.abs(vars.vy[i] / INTERACTION_RADIUS)))
+    vars.y[i] += (boundingArea.t * sy - vars.y[i]) * (1.5 + (1 - FRICTION) * f)
   }
-  
 }
 
 const calculateVelocity = (i, dt) => {
