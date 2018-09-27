@@ -1,29 +1,26 @@
 import {
-  PlaneGeometry,
   SphereGeometry,
   Mesh,
   PointLight,
   Scene,
   PerspectiveCamera,
   WebGLRenderer,
-  Vector2,
   MeshBasicMaterial,
-  VertexColors,
-  Color
 } from "three"
 
+import clampNumber from '../../js/clampNumber'
 import SpatialHashMap from '../../js/SpatialHashMap'
 import { multiplyScalar, length, lengthSq, add, subtract, dot, unit, unitApprox } from '../../js/2dVectorOperations'
 
-const PARTICLE_COUNT = 1250
+const signIsEqual = (a, b) => a * b > 0
 
+const PARTICLE_COUNT = 1600
 let counter = 0
 
 const STIFFNESS = .8
 const STIFFNESS_NEAR = 1
 const REST_DENSITY = 5
-const FRICTION = .1
-const INTERACTION_RADIUS = 2.25
+const INTERACTION_RADIUS = 1.5
 const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2
 const GRAVITY = [0, -15]
@@ -91,14 +88,14 @@ let mouseDown = false
 
 for (let i = 0; i < PARTICLE_COUNT; i++) {
   vars.x[i] = boundingArea.l + Math.random() * boundingArea.w
-  vars.y[i] = boundingArea.b + Math.random() * boundingArea.h
+  vars.y[i] = boundingArea.b + Math.random() * boundingArea.h / 3.5
   vars.oldX[i] = vars.x[i]
   vars.oldY[i] = vars.y[i]
   vars.vx[i] = 0
   vars.vy[i] = 0
   vars.color[i] = Math.floor(Math.random() * 3)
 
-  const geometry = new SphereGeometry(viewportHeight / height * 5, 2, 2)
+  const geometry = new SphereGeometry(.15, 4, 4)
   const material = new MeshBasicMaterial({ color: colors[vars.color[i]] })
   const sphere = new Mesh(geometry, material)
   sphere.position.x = vars.x[i]
@@ -119,9 +116,6 @@ const simulate = dt => {
     vars.oldY[i] = vars.y[i]
 
     applyGlobalForces(i, dt)
-    
-    vars.vx[i] *= 1 - (.1 * dt)
-    vars.vy[i] *= 1 - (.1 * dt)
 
     vars.x[i] += vars.vx[i] * dt
     vars.y[i] += vars.vy[i] * dt
@@ -135,14 +129,19 @@ const simulate = dt => {
     const neighbors = hashMap
       .query(vars.x[i], vars.y[i])
       .map(j => ([j, particleGradient(i, j)]))
+      .filter(([j, g], i) => {
+        if (i === j) return false
+        if (!g) return false
+        return true
+      })
 
     updateDensities(i, neighbors)
     
     // perform double density relaxation
     relax(i, neighbors, dt)
 
-    bounce(i)
-    
+    contain(i, dt)
+
   }
   
   for (let i = 0; i < PARTICLE_COUNT; i++) {
@@ -181,8 +180,6 @@ const updateDensities = (i, neighbors) => {
   let nearDensity = 0
 
   neighbors.forEach(([j, g]) => {
-    if (i === j) return
-    if (!g) return
     density += g ** 2
     nearDensity += g ** 3
   })
@@ -201,8 +198,6 @@ const relax = (i, neighbors, dt) => {
   let dy = 0
 
   neighbors.forEach(([j, g]) => {
-    if (i === j) return
-    if (!g) return
 
     const nx = vars.x[j]
     const ny = vars.y[j]
@@ -211,7 +206,7 @@ const relax = (i, neighbors, dt) => {
     const u = unitApprox(subtract([nx, ny], [x, y]))
     const d = multiplyScalar(u, dt * dt * magnitude)
 
-    const f = (vars.color[i] !== (vars.color[j] + 1) % colors.length) ? .49 : .51
+    const f =  (vars.color[i] !== (vars.color[j] + 1) % colors.length) ? .49 : .51
     
     dx += d[0] * -f
     dy += d[1] * -f
@@ -241,18 +236,16 @@ const gradient = (a, b) => {
   return g
 }
 
-const bounce = i => {
+const contain = (i, dt) => {
   const sx = Math.sign(vars.x[i])
   const sy = Math.sign(vars.y[i])
 
   if (vars.x[i] * sx > boundingArea.r) {
-    const f = .5 * Math.max(FRICTION, Math.min(1, Math.abs(vars.vx[i] / INTERACTION_RADIUS)))
-    vars.x[i] += (boundingArea.r * sx - vars.x[i]) * (1.5 + (1 - FRICTION) * f)
+    vars.x[i] = boundingArea.r * sx
   }
 
   if (vars.y[i] * sy > boundingArea.t) {
-    const f = .5 * Math.max(FRICTION, Math.min(1, Math.abs(vars.vy[i] / INTERACTION_RADIUS)))
-    vars.y[i] += (boundingArea.t * sy - vars.y[i]) * (1.5 + (1 - FRICTION) * f)
+    vars.y[i] = boundingArea.t * sy
   }
 }
 
@@ -271,15 +264,15 @@ const calculateVelocity = (i, dt) => {
 const t0 = performance.now()
 const runFor = 15000
 
-let animationFrame
-
 let frame
 let tPrev
 
 const loop = () => {
   const t = performance.now()
-  simulate(Math.min(33 / 1000, (t - tPrev) / 1000))
+  simulate(1 / 60)
   tPrev = t
+
+  counter = 0
 
   renderer.render(scene, camera)
   frame = requestAnimationFrame(loop)
