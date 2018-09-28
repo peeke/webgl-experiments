@@ -37,4 +37,8 @@ const dot = (vec1, vec2) => {
   return [vec1[0] * vec2[0], vec1[1] * vec2[1]]
 }
 
-export { add, subtract, lengthSq, length, unit, unitApprox, multiplyScalar, dot }
+const lerp = (vec1, vec2, f) => {
+  return add(multiplyScalar(subtract(vec2, vec1), f), vec1)
+}
+
+export { add, subtract, lengthSq, length, unit, unitApprox, multiplyScalar, dot, lerp }

@@ -1,5 +1,5 @@
 
-import clampNumber from './clamp-number'
+import clampNumber from './clampNumber'
 
 const mapNumber = (input, inFrom, inTo, outFrom, outTo) => {
   const clampedInput =
