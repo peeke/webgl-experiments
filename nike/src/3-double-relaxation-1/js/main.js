@@ -13,18 +13,16 @@ import mapNumber from '../../js/mapNumber'
 import SpatialHashMap from '../../js/SpatialHashMap'
 import { multiplyScalar, length, lengthSq, add, subtract, dot, unit, unitApprox, lerp } from '../../js/2dVectorOperations'
 
-const signIsEqual = (a, b) => a * b > 0
-
-const PARTICLE_COUNT = 1600
+const PARTICLE_COUNT = 2000
 let counter = 0
 
 const STIFFNESS = .4
 const STIFFNESS_NEAR = 1
-const REST_DENSITY = 3
-const INTERACTION_RADIUS = 1.5
+const REST_DENSITY = 6
+const INTERACTION_RADIUS = 2
 const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2
-const GRAVITY = [0, -15]
+const GRAVITY = [0, -13]
 const VISCOSITY = .01
 
 console.log({
@@ -89,7 +87,7 @@ let mouseDown = false
 
 for (let i = 0; i < PARTICLE_COUNT; i++) {
   vars.x[i] = boundingArea.l + Math.random() * boundingArea.w
-  vars.y[i] = boundingArea.b + Math.random() * boundingArea.h / 3.5
+  vars.y[i] = boundingArea.b + Math.random() ** 1.5 * .4 * boundingArea.h
   vars.oldX[i] = vars.x[i]
   vars.oldY[i] = vars.y[i]
   vars.vx[i] = 0
@@ -105,7 +103,7 @@ for (let i = 0; i < PARTICLE_COUNT; i++) {
   scene.add(sphere)
 }
 
-const hashMap = new SpatialHashMap(boundingArea.r, boundingArea.w / 4 / INTERACTION_RADIUS, INTERACTION_RADIUS)
+const hashMap = new SpatialHashMap(boundingArea.r, INTERACTION_RADIUS)
 
 const simulate = dt => {
   
@@ -130,7 +128,9 @@ const simulate = dt => {
     const neighbors = hashMap
       .query(vars.x[i], vars.y[i])
       .map(j => ([j, particleGradient(i, j)]))
-      .filter(([j, g], i) => {
+      .filter((n, i) => {
+        const j = n[0]
+        const g = n[1]
         if (i === j) return false
         if (!g) return false
         return true
@@ -184,10 +184,11 @@ const updateDensities = (i, neighbors) => {
   let density = 0
   let nearDensity = 0
 
-  neighbors.forEach(([j, g]) => {
+  for (let k = 0; k < neighbors.length; k++) {
+    const g = neighbors[k][1]
     density += g ** 2
     nearDensity += g ** 3
-  })
+  }
 
   vars.p[i] = STIFFNESS * (density - REST_DENSITY)
   vars.pNear[i] = STIFFNESS_NEAR * nearDensity
@@ -204,7 +205,9 @@ const relax = (i, neighbors, dt) => {
   let dx = 0
   let dy = 0
 
-  neighbors.forEach(([j, g]) => {
+  for (let k = 0; k < neighbors.length; k++) {
+    const j = neighbors[k][0]
+    const g = neighbors[k][1]
 
     const nx = vars.x[j]
     const ny = vars.y[j]
@@ -220,7 +223,7 @@ const relax = (i, neighbors, dt) => {
     vars.x[j] = nx + d[0] * .5
     vars.y[j] = ny + d[1] * .5
     
-  })
+  }
 
   vars.x[i] += dx
   vars.y[i] += dy
@@ -231,11 +234,11 @@ const particleGradient = (i, j) => {
   return gradient([vars.x[i], vars.y[i]], [vars.x[j], vars.y[j]])
 }
 
-const gradientCache = new Float32Array(Math.ceil(INTERACTION_RADIUS_SQ * 5))
+const gradientCache = {}
 const gradient = (a, b) => {
-  const lsq = lengthSq(subtract([a[0], a[1]], [b[0], b[1]]))
+  const lsq = lengthSq(subtract(a, b))
   if (lsq > INTERACTION_RADIUS_SQ) return 0
-  const cacheIndex = Math.round(lsq * 5)
+  const cacheIndex = lsq * 10 | 0
   if (gradientCache[cacheIndex]) return gradientCache[cacheIndex]
   const g = Math.max(0, 1 - Math.sqrt(lsq) * INTERACTION_RADIUS_INV)
   gradientCache[cacheIndex] = g
@@ -248,19 +251,20 @@ const avoidWallClumping = (i, dt) => {
   const sx = x > 0 ? 1 : -1
   const sy = y > 0 ? 1 : -1
 
-  const I = INTERACTION_RADIUS / 10 * Math.max(1, vars.pNear[i] / REST_DENSITY)
+  const WALL_DISTANCE = .5 * INTERACTION_RADIUS
+  // const f = (1 - 1 / vars.pNear[i]) ** 3
+  const f = clampNumber(vars.pNear[i] / REST_DENSITY, 0, 1)
 
-  // vars.mesh[i].material.color.setHSL(0, 1, f)
-
-  if (x * sx > boundingArea.r - I){
-    const g = 1 - Math.abs(boundingArea.r * sx - x) / I;
-    vars.x[i] -= sx * REST_DENSITY * g ** 2 * dt * 0.5;
+  if (x * sx > boundingArea.r - WALL_DISTANCE){
+    const g = 1 - Math.abs(boundingArea.r * sx - x) / WALL_DISTANCE;
+    vars.x[i] += -sx * WALL_DISTANCE * g * f * dt;
   }
 
-  if (y * sy > boundingArea.t - I){
-    const g = 1 - Math.abs(boundingArea.t * sy - y) / I;
-    vars.y[i] -= sy * REST_DENSITY * g ** 2 * dt * 0.5;
+  if (y * sy > boundingArea.t - WALL_DISTANCE){
+    const g = 1 - Math.abs(boundingArea.t * sy - y) / WALL_DISTANCE;
+    vars.y[i] += -sy * WALL_DISTANCE * g * f * dt;
   }
+
 }
 
 const contain = (i, dt) => {
@@ -296,7 +300,8 @@ let tPrev
 
 const loop = () => {
   const t = performance.now()
-  simulate(Math.min((t - tPrev) / 1000, 1 / 30))
+  simulate(16 / 1000)
+  // simulate(Math.min((t - tPrev) / 1000, 1 / 30))
   tPrev = t
 
   counter = 0

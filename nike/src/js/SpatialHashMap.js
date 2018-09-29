@@ -1,11 +1,10 @@
 class SpatialHashMap {
 
-  constructor(rowWidth, cellsInRow, queryOffset) {
+  constructor(rowWidth, cellSize) {
     this.rowWidth = rowWidth
-    this.cellWidth = rowWidth / cellsInRow
+    this.cellWidth = cellSize
     this.cellWidthInv = 1 / this.cellWidth
-    this.cellsInRow = cellsInRow
-    this.queryOffset = queryOffset
+    this.cellsInRow = Math.ceil(rowWidth / cellSize)
     this.grid = {}
     this.cache = {}
   }
@@ -17,31 +16,33 @@ class SpatialHashMap {
 
   add(x, y, obj) {
     const index = this.index(x, y)
-    if (this.grid[index]) {
-      this.grid[index].push(obj)
-    } else {
-      this.grid[index] = [obj]
+    if (!this.grid[index]) {
+      this.grid[index] = []
     }
+    this.grid[index].push(obj)
   }
 
   query(x, y) {
-    const cacheIndex = this.index(x, y)
-    if (this.cache[cacheIndex]) {
-      return this.cache[cacheIndex]
+    const index = this.index(x, y)
+    if (this.cache[index]) {
+      return this.cache[index]
     }
 
     const result = []
 
-    for (let i = x - this.queryOffset; i <= x + this.queryOffset; i += this.cellWidth) {
-      for (let j = y - this.queryOffset; j <= y + this.queryOffset; j += this.cellWidth) {
-        const index = this.index(i, j)
-        if (this.grid[index]) {
-          result.push.apply(result, this.grid[index]);
-        }
-      }
-    }
+    result.push.apply(result, this.grid[index - 1 + this.cellsInRow] || []);
+    result.push.apply(result, this.grid[index + this.cellsInRow] || []);
+    result.push.apply(result, this.grid[index + 1 + this.cellsInRow] || []);
 
-    this.cache[this.index] = result
+    result.push.apply(result, this.grid[index - 1] || []);
+    result.push.apply(result, this.grid[index] || []);
+    result.push.apply(result, this.grid[index + 1] || []);
+
+    result.push.apply(result, this.grid[index - 1 - this.cellsInRow] || []);
+    result.push.apply(result, this.grid[index - this.cellsInRow] || []);
+    result.push.apply(result, this.grid[index + 1 - this.cellsInRow] || []);
+
+    this.cache[index] = result
     return result
   }
 
