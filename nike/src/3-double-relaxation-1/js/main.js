@@ -14,16 +14,18 @@ import SpatialHashMap from '../../js/SpatialHashMap'
 import { multiplyScalar, length, lengthSq, add, subtract, dot, unit, unitApprox, lerp } from '../../js/2dVectorOperations'
 
 const PARTICLE_COUNT = 2500
-let counter = 0
 
 const STIFFNESS = .4
 const STIFFNESS_NEAR = 1
-const REST_DENSITY = 6
+const REST_DENSITY = 10
+const REST_DENSITY_INV = 1 / REST_DENSITY
 const INTERACTION_RADIUS = 1.5
 const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2
 const GRAVITY = [0, -13]
 const VISCOSITY = .01
+const WALL_DISTANCE = .1 * INTERACTION_RADIUS
+const WALL_DISTANCE_INV = 1 / WALL_DISTANCE
 
 console.log({
   PARTICLE_COUNT,
@@ -238,20 +240,17 @@ const avoidWallClumping = (i, dt) => {
   const y = vars.y[i]
   const sx = x > 0 ? 1 : -1
   const sy = y > 0 ? 1 : -1
+  const pNear = vars.pNear[i]
 
-  const wallDistance = .5 * INTERACTION_RADIUS
-  const wallDistanceInv = 1 / wallDistance
-  // const f = (1 - 1 / vars.pNear[i]) ** 3
-  const f = clampNumber(vars.pNear[i] / REST_DENSITY, 0, 1)
+  const gx = 1 - Math.abs(boundingArea.r * sx - x) * WALL_DISTANCE_INV
+  const gy = 1 - Math.abs(boundingArea.t * sy - y) * WALL_DISTANCE_INV
 
-  if (x * sx > boundingArea.r - wallDistance){
-    const g = 1 - Math.abs(boundingArea.r * sx - x) * wallDistanceInv
-    vars.x[i] += -sx * wallDistance * g * f * dt;
+  if (x * sx > boundingArea.r - WALL_DISTANCE){
+    vars.x[i] += -sx * INTERACTION_RADIUS * gx * pNear * REST_DENSITY_INV * dt // * f // * dt;
   }
 
-  if (y * sy > boundingArea.t - wallDistance){
-    const g = 1 - Math.abs(boundingArea.t * sy - y) * wallDistanceInv
-    vars.y[i] += -sy * wallDistance * g * f * dt;
+  if (y * sy > boundingArea.t - WALL_DISTANCE){
+    vars.y[i] += -sy * INTERACTION_RADIUS * gy * pNear * REST_DENSITY_INV * dt // * f // * dt;
   }
 
 }
