@@ -1,9 +1,19 @@
 const add = (vec1, vec2) => {
-  return [vec1[0] + vec2[0], vec1[1] + vec2[1]]
+  vec1[0] += vec2[0]
+  vec1[1] += vec2[1]
+  return vec1
 }
 
 const subtract = (vec1, vec2) => {
-  return [vec1[0] - vec2[0], vec1[1] - vec2[1]]
+  vec1[0] -= vec2[0]
+  vec1[1] -= vec2[1]
+  return vec1
+}
+
+const dot = (vec1, vec2) => {
+  vec1[0] *= vec2[0]
+  vec1[1] *= vec2[1]
+  return vec1
 }
 
 const lengthSq = vec => {
@@ -15,7 +25,9 @@ const length = vec => {
 }
 
 const multiplyScalar = (vec, scalar) => {
-  return [vec[0] * scalar, vec[1] * scalar]
+  vec[0] *= scalar
+  vec[1] *= scalar
+  return vec
 }
 
 const unit = vec => {
@@ -30,11 +42,7 @@ const unitApprox = vec => {
   const ay = Math.abs(vec[1]);
   let ratio = 1 / Math.max(ax, ay)
   ratio = ratio * (1.29289 - (ax + ay) * ratio * 0.29289)
-  return [vec[0] * ratio, vec[1] * ratio]
-}
-
-const dot = (vec1, vec2) => {
-  return [vec1[0] * vec2[0], vec1[1] * vec2[1]]
+  return multiplyScalar(vec, ratio)
 }
 
 const lerp = (vec1, vec2, f) => {

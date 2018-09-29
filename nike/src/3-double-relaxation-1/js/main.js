@@ -13,13 +13,13 @@ import mapNumber from '../../js/mapNumber'
 import SpatialHashMap from '../../js/SpatialHashMap'
 import { multiplyScalar, length, lengthSq, add, subtract, dot, unit, unitApprox, lerp } from '../../js/2dVectorOperations'
 
-const PARTICLE_COUNT = 2000
+const PARTICLE_COUNT = 2500
 let counter = 0
 
 const STIFFNESS = .4
 const STIFFNESS_NEAR = 1
 const REST_DENSITY = 6
-const INTERACTION_RADIUS = 2
+const INTERACTION_RADIUS = 1.5
 const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2
 const GRAVITY = [0, -13]
@@ -125,21 +125,19 @@ const simulate = dt => {
 
   for (let i = 0; i < PARTICLE_COUNT; i++) {
 
-    const neighbors = hashMap
-      .query(vars.x[i], vars.y[i])
-      .map(j => ([j, particleGradient(i, j)]))
-      .filter((n, i) => {
-        const j = n[0]
-        const g = n[1]
-        if (i === j) return false
-        if (!g) return false
-        return true
-      })
+    const results = hashMap.query(vars.x[i], vars.y[i])
+    let neighbors = []
+
+    for (let k = 0; k < results.length; k++) {
+      const j = results[k]
+      if (i === j) continue
+      const g = particleGradient(i, j)
+      if (!g) continue
+      neighbors.push([j, g])
+    }
 
     updateDensities(i, neighbors)
-
     avoidWallClumping(i, dt)
-
     contain(i, dt)
     
     // perform double density relaxation
@@ -165,7 +163,9 @@ const simulate = dt => {
 }
 
 const applyGlobalForces = (i, dt) => {
-  let force = GRAVITY
+  let force = Array.from(GRAVITY)
+
+  force[1] += vars.color[i] / 5
 
   if (mouseDown) {
     const fromMouse = subtract([vars.x[i], vars.y[i]], mouse)
@@ -186,8 +186,8 @@ const updateDensities = (i, neighbors) => {
 
   for (let k = 0; k < neighbors.length; k++) {
     const g = neighbors[k][1]
-    density += g ** 2
-    nearDensity += g ** 3
+    density += g * g
+    nearDensity += g * g * g
   }
 
   vars.p[i] = STIFFNESS * (density - REST_DENSITY)
@@ -195,52 +195,40 @@ const updateDensities = (i, neighbors) => {
 }
 
 const relax = (i, neighbors, dt) => {
-  
-  const x = vars.x[i]
-  const y = vars.y[i]
-
-  const pressure = vars.p[i]
-  const nearPressure = vars.pNear[i]
-  
-  let dx = 0
-  let dy = 0
+  const p = [vars.x[i], vars.y[i]]
 
   for (let k = 0; k < neighbors.length; k++) {
     const j = neighbors[k][0]
     const g = neighbors[k][1]
+    const n = [vars.x[j], vars.y[j]]
 
-    const nx = vars.x[j]
-    const ny = vars.y[j]
-
-    const magnitude = pressure * g + nearPressure * g ** 2
-    const f = (vars.color[i] !== (vars.color[j] + 1) % colors.length) ? .99 : 1.01
-    const u = unitApprox(subtract([nx, ny], [x, y]))
-    const d = multiplyScalar(u, dt * dt * magnitude * f)
+    const magnitude = vars.p[i] * g + vars.pNear[i] * g * g
+    const f = (vars.color[i] === vars.color[j]) ? 1.01 : .99
+    const d = multiplyScalar(unitApprox(subtract(n, p)), magnitude * f * dt * dt)
     
-    dx += d[0] * -.5
-    dy += d[1] * -.5
+    vars.x[i] -= d[0] * .5
+    vars.y[i] -= d[1] * .5
 
-    vars.x[j] = nx + d[0] * .5
-    vars.y[j] = ny + d[1] * .5
-    
+    vars.x[j] += d[0] * .5
+    vars.y[j] += d[1] * .5
   }
-
-  vars.x[i] += dx
-  vars.y[i] += dy
-
 }
 
 const particleGradient = (i, j) => {
   return gradient([vars.x[i], vars.y[i]], [vars.x[j], vars.y[j]])
 }
 
-const gradientCache = {}
+const gradientCache = new Float32Array(Math.ceil(INTERACTION_RADIUS_SQ * 10))
+
 const gradient = (a, b) => {
   const lsq = lengthSq(subtract(a, b))
   if (lsq > INTERACTION_RADIUS_SQ) return 0
+
   const cacheIndex = lsq * 10 | 0
   if (gradientCache[cacheIndex]) return gradientCache[cacheIndex]
+
   const g = Math.max(0, 1 - Math.sqrt(lsq) * INTERACTION_RADIUS_INV)
+
   gradientCache[cacheIndex] = g
   return g
 }
@@ -251,18 +239,19 @@ const avoidWallClumping = (i, dt) => {
   const sx = x > 0 ? 1 : -1
   const sy = y > 0 ? 1 : -1
 
-  const WALL_DISTANCE = .5 * INTERACTION_RADIUS
+  const wallDistance = .5 * INTERACTION_RADIUS
+  const wallDistanceInv = 1 / wallDistance
   // const f = (1 - 1 / vars.pNear[i]) ** 3
   const f = clampNumber(vars.pNear[i] / REST_DENSITY, 0, 1)
 
-  if (x * sx > boundingArea.r - WALL_DISTANCE){
-    const g = 1 - Math.abs(boundingArea.r * sx - x) / WALL_DISTANCE;
-    vars.x[i] += -sx * WALL_DISTANCE * g * f * dt;
+  if (x * sx > boundingArea.r - wallDistance){
+    const g = 1 - Math.abs(boundingArea.r * sx - x) * wallDistanceInv
+    vars.x[i] += -sx * wallDistance * g * f * dt;
   }
 
-  if (y * sy > boundingArea.t - WALL_DISTANCE){
-    const g = 1 - Math.abs(boundingArea.t * sy - y) / WALL_DISTANCE;
-    vars.y[i] += -sy * WALL_DISTANCE * g * f * dt;
+  if (y * sy > boundingArea.t - wallDistance){
+    const g = 1 - Math.abs(boundingArea.t * sy - y) * wallDistanceInv
+    vars.y[i] += -sy * wallDistance * g * f * dt;
   }
 
 }
@@ -281,30 +270,25 @@ const contain = (i, dt) => {
 }
 
 const calculateVelocity = (i, dt) => {
-  const x = vars.x[i]
-  const y = vars.y[i]
-  const oldX = vars.oldX[i]
-  const oldY = vars.oldY[i]
+  const p = [vars.x[i], vars.y[i]]
+  const old = [vars.oldX[i], vars.oldY[i]]
 
-  const v = multiplyScalar(subtract([x, y], [oldX, oldY]), 1 / dt)
+  const v = multiplyScalar(subtract(p, old), 1 / dt)
 
   vars.vx[i] = v[0]
   vars.vy[i] = v[1]
 }
 
-const t0 = performance.now()
-const runFor = 15000
+const maxFrameDuration = 1 / 20
 
 let frame
 let tPrev
 
-const loop = () => {
+function loop() {
   const t = performance.now()
-  simulate(16 / 1000)
-  // simulate(Math.min((t - tPrev) / 1000, 1 / 30))
+  // simulate(16 / 1000)
+  simulate(Math.min((t - tPrev) / 1000, maxFrameDuration))
   tPrev = t
-
-  counter = 0
 
   renderer.render(scene, camera)
   frame = requestAnimationFrame(loop)
