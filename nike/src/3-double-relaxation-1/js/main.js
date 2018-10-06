@@ -1,11 +1,16 @@
 import {
-  SphereGeometry,
+  BufferAttribute,
+  BufferGeometry,
   Mesh,
+  Points,
   PointLight,
   Scene,
   PerspectiveCamera,
   WebGLRenderer,
   MeshBasicMaterial,
+  PointsMaterial,
+  VertexColors,
+  Color
 } from "three"
 
 import clampNumber from '../../js/clampNumber'
@@ -13,17 +18,19 @@ import mapNumber from '../../js/mapNumber'
 import SpatialHashMap from '../../js/SpatialHashMap'
 import { multiplyScalar, length, lengthSq, add, subtract, dot, unit, unitApprox, lerp } from '../../js/2dVectorOperations'
 
-const PARTICLE_COUNT = 2500
+const PARTICLE_COUNT = 800
 
-const STIFFNESS = .4
-const STIFFNESS_NEAR = 1
-const REST_DENSITY = 10
+const STIFFNESS = 12
+const STIFFNESS_NEAR = 18
+const REST_DENSITY = 3
 const REST_DENSITY_INV = 1 / REST_DENSITY
-const INTERACTION_RADIUS = 1.5
+const INTERACTION_RADIUS = 2
+const CELLS_PER_IR = 3
 const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2
-const GRAVITY = [0, -13]
+const GRAVITY = [0, -18]
 const VISCOSITY = .01
+const WALL_FRICTION = .5
 const WALL_DISTANCE = .1 * INTERACTION_RADIUS
 const WALL_DISTANCE_INV = 1 / WALL_DISTANCE
 
@@ -36,8 +43,7 @@ console.log({
 })
 
 const vars = {
-  x: new Float32Array(PARTICLE_COUNT),
-  y: new Float32Array(PARTICLE_COUNT),
+  pos: new Float32Array(PARTICLE_COUNT * 2),
   oldX: new Float32Array(PARTICLE_COUNT),
   oldY: new Float32Array(PARTICLE_COUNT),
   vx: new Float32Array(PARTICLE_COUNT),
@@ -45,10 +51,10 @@ const vars = {
   p: new Float32Array(PARTICLE_COUNT),
   pNear: new Float32Array(PARTICLE_COUNT),
   color: new Uint8Array(PARTICLE_COUNT),
-  mesh: []
+  // mesh: []
 }
 
-const colors = [0xff4e91, 0xffe04e, 0x3568e5]
+const colors = [new Color(0xff4e91), new Color(0xffe04e), new Color(0x3568e5)]
 
 const canvas = document.querySelector("#canvas")
 const dpr = window.devicePixelRatio
@@ -88,24 +94,35 @@ const mouse = [-1000, -1000];
 let mouseDown = false
 
 for (let i = 0; i < PARTICLE_COUNT; i++) {
-  vars.x[i] = boundingArea.l + Math.random() * boundingArea.w
-  vars.y[i] = boundingArea.b + Math.random() ** 1.5 * .4 * boundingArea.h
-  vars.oldX[i] = vars.x[i]
-  vars.oldY[i] = vars.y[i]
+  vars.pos[i * 2] = boundingArea.l + Math.random() * boundingArea.w
+  vars.pos[i * 2 + 1] = boundingArea.b + Math.random() * boundingArea.h
+  vars.oldX[i] = vars.pos[i * 2]
+  vars.oldY[i] = vars.pos[i * 2 + 1]
   vars.vx[i] = 0
   vars.vy[i] = 0
   vars.color[i] = Math.floor(Math.random() * 3)
-
-  const geometry = new SphereGeometry(.15, 4, 4)
-  const material = new MeshBasicMaterial({ color: colors[vars.color[i]] })
-  const sphere = new Mesh(geometry, material)
-  sphere.position.x = vars.x[i]
-  sphere.position.y = vars.y[i]
-  vars.mesh[i] = sphere
-  scene.add(sphere)
 }
 
-const hashMap = new SpatialHashMap(boundingArea.r, INTERACTION_RADIUS)
+const geometry = new BufferGeometry();
+console.log(Array.from(vars.color).map(i => colors[i]))
+geometry.addAttribute('position', new BufferAttribute(vars.pos, 2));
+const colorAttribute = vars.color.reduce((result, color, i) => {
+  result[i * 3] = colors[color].r
+  result[i * 3 + 1] = colors[color].g
+  result[i * 3 + 2] = colors[color].b
+  return result
+}, new Float32Array(vars.color.length * 3))
+geometry.addAttribute('color', new BufferAttribute(colorAttribute, 3));
+
+const material = new PointsMaterial({
+  size: viewportHeight / window.innerHeight / .66 * 6,
+  vertexColors: VertexColors
+})
+
+const points = new Points(geometry, material)
+scene.add(points)
+
+const hashMap = new SpatialHashMap(boundingArea.r, INTERACTION_RADIUS / CELLS_PER_IR, INTERACTION_RADIUS)
 
 const simulate = dt => {
   
@@ -113,21 +130,21 @@ const simulate = dt => {
   
   for (let i = 0; i < PARTICLE_COUNT; i++) {
 
-    vars.oldX[i] = vars.x[i]
-    vars.oldY[i] = vars.y[i]
+    vars.oldX[i] = vars.pos[i * 2]
+    vars.oldY[i] = vars.pos[i * 2 + 1]
 
     applyGlobalForces(i, dt)
 
-    vars.x[i] += vars.vx[i] * dt
-    vars.y[i] += vars.vy[i] * dt
-    
-    hashMap.add(vars.x[i], vars.y[i], i)
+    vars.pos[i * 2] += vars.vx[i] * dt
+    vars.pos[i * 2 + 1] += vars.vy[i] * dt
+
+    hashMap.add(vars.pos[i * 2], vars.pos[i * 2 + 1], i)
 
   }
 
   for (let i = 0; i < PARTICLE_COUNT; i++) {
 
-    const results = hashMap.query(vars.x[i], vars.y[i])
+    const results = hashMap.query(vars.pos[i * 2], vars.pos[i * 2 + 1])
     let neighbors = []
 
     for (let k = 0; k < results.length; k++) {
@@ -138,9 +155,14 @@ const simulate = dt => {
       neighbors.push([j, g])
     }
 
-    updateDensities(i, neighbors)
-    avoidWallClumping(i, dt)
     contain(i, dt)
+
+    for (let k = 0; k < neighbors.length; k++) {
+      const j = neighbors[k][0]
+      contain(j, dt)
+    }
+
+    updateDensities(i, neighbors)
     
     // perform double density relaxation
     relax(i, neighbors, dt)
@@ -155,10 +177,12 @@ const simulate = dt => {
     calculateVelocity(i, dt)
 
     // Update
-    const mesh = vars.mesh[i]
-    mesh.position.x = vars.x[i]
-    mesh.position.y = vars.y[i]
-    mesh.verticesNeedUpdate = true
+    // const mesh = vars.mesh[i]
+    // mesh.position.x = vars.pos[i * 2]
+    // mesh.position.y = vars.pos[i * 2 + 1]
+    // mesh.verticesNeedUpdate = true
+
+    geometry.attributes.position.needsUpdate = true
 
   }
 
@@ -170,7 +194,7 @@ const applyGlobalForces = (i, dt) => {
   force[1] += vars.color[i] / 5
 
   if (mouseDown) {
-    const fromMouse = subtract([vars.x[i], vars.y[i]], mouse)
+    const fromMouse = subtract([vars.pos[i * 2], vars.pos[i * 2 + 1]], mouse)
     const scalar = Math.min(100, (1000 / lengthSq(fromMouse)))
     const mouseForce = multiplyScalar(unitApprox(fromMouse), scalar)
     force = add(force, mouseForce)
@@ -180,6 +204,7 @@ const applyGlobalForces = (i, dt) => {
 
   vars.vx[i] += dv[0]
   vars.vy[i] += dv[1]
+
 }
 
 const updateDensities = (i, neighbors) => {
@@ -197,27 +222,28 @@ const updateDensities = (i, neighbors) => {
 }
 
 const relax = (i, neighbors, dt) => {
-  const p = [vars.x[i], vars.y[i]]
+  const p = [vars.pos[i * 2], vars.pos[i * 2 + 1]]
 
   for (let k = 0; k < neighbors.length; k++) {
     const j = neighbors[k][0]
     const g = neighbors[k][1]
-    const n = [vars.x[j], vars.y[j]]
+    const n = [vars.pos[j * 2], vars.pos[j * 2 + 1]]
 
     const magnitude = vars.p[i] * g + vars.pNear[i] * g * g
-    const f = (vars.color[i] === vars.color[j]) ? 1.01 : .99
+    const f = 1 // (vars.color[i] === vars.color[j]) ? 1.1 : .9
     const d = multiplyScalar(unitApprox(subtract(n, p)), magnitude * f * dt * dt)
     
-    vars.x[i] -= d[0] * .5
-    vars.y[i] -= d[1] * .5
+    vars.pos[i * 2] -= d[0] * .5
+    vars.pos[i * 2 + 1] -= d[1] * .5
 
-    vars.x[j] += d[0] * .5
-    vars.y[j] += d[1] * .5
+    vars.pos[j * 2] += d[0] * .5
+    vars.pos[j * 2 + 1] += d[1] * .5
+
   }
 }
 
 const particleGradient = (i, j) => {
-  return gradient([vars.x[i], vars.y[i]], [vars.x[j], vars.y[j]])
+  return gradient([vars.pos[i * 2], vars.pos[i * 2 + 1]], [vars.pos[j * 2], vars.pos[j * 2 + 1]])
 }
 
 const gradientCache = new Float32Array(Math.ceil(INTERACTION_RADIUS_SQ * 10))
@@ -235,41 +261,27 @@ const gradient = (a, b) => {
   return g
 }
 
-const avoidWallClumping = (i, dt) => {
-  const x = vars.x[i]
-  const y = vars.y[i]
-  const sx = x > 0 ? 1 : -1
-  const sy = y > 0 ? 1 : -1
-  const pNear = vars.pNear[i]
-
-  const gx = 1 - Math.abs(boundingArea.r * sx - x) * WALL_DISTANCE_INV
-  const gy = 1 - Math.abs(boundingArea.t * sy - y) * WALL_DISTANCE_INV
-
-  if (x * sx > boundingArea.r - WALL_DISTANCE){
-    vars.x[i] += -sx * INTERACTION_RADIUS * gx * pNear * REST_DENSITY_INV * dt // * f // * dt;
-  }
-
-  if (y * sy > boundingArea.t - WALL_DISTANCE){
-    vars.y[i] += -sy * INTERACTION_RADIUS * gy * pNear * REST_DENSITY_INV * dt // * f // * dt;
-  }
-
-}
-
 const contain = (i, dt) => {
-  const sx = Math.sign(vars.x[i])
-  const sy = Math.sign(vars.y[i])
+  const sx = Math.sign(vars.pos[i * 2])
+  const sy = Math.sign(vars.pos[i * 2 + 1])
 
-  if (vars.x[i] * sx > boundingArea.r) {
-    vars.x[i] = (boundingArea.r) * sx
+  if (vars.pos[i * 2] * sx > boundingArea.r) {
+    //  vars.pos[i * 2] = boundingArea.t * sx
+    const dx = (vars.pos[i * 2] - vars.oldX[i])
+    vars.pos[i * 2] = 2 * boundingArea.t * sx - vars.pos[i * 2]
+    vars.oldX[i] = vars.pos[i * 2] + dx
   }
 
-  if (vars.y[i] * sy > boundingArea.t) {
-    vars.y[i] = (boundingArea.t) * sy
+  if (vars.pos[i * 2 + 1] * sy > boundingArea.t) {
+    // vars.pos[i * 2 + 1] = boundingArea.t * sy
+    const dy = (vars.pos[i * 2 + 1] - vars.oldY[i])
+    vars.pos[i * 2 + 1] = 2 * boundingArea.t * sy - vars.pos[i * 2 + 1]
+    vars.oldY[i] = vars.pos[i * 2 + 1] + dy
   }
 }
 
 const calculateVelocity = (i, dt) => {
-  const p = [vars.x[i], vars.y[i]]
+  const p = [vars.pos[i * 2], vars.pos[i * 2 + 1]]
   const old = [vars.oldX[i], vars.oldY[i]]
 
   const v = multiplyScalar(subtract(p, old), 1 / dt)
