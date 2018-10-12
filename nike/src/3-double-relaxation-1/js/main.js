@@ -7,14 +7,21 @@ import {
   PerspectiveCamera,
   WebGLRenderer,
   PointsMaterial,
+  PlaneGeometry,
+  ShaderMaterial,
+  Mesh,
   VertexColors,
-  Color
+  Color,
+  DataTexture,
+  RGBAFormat,
+  UnsignedByteType
 } from "three";
+
+import BlendPointsShader from "./BlendPointsShader";
 
 import EffectComposer from "../../js/EffectComposer";
 import RenderPass from "../../js/RenderPass";
 import ShaderPass from "../../js/ShaderPass";
-import SepiaShader from "../../js/SepiaShader";
 
 import clampNumber from "../../js/clampNumber";
 import mapNumber from "../../js/mapNumber";
@@ -31,21 +38,18 @@ import {
   lerp
 } from "../../js/2dVectorOperations";
 
-const PARTICLE_COUNT = 1500;
+const PARTICLE_COUNT = 800;
+const GRID_CELLS = 80;
 
 const STIFFNESS = 12;
 const STIFFNESS_NEAR = 18;
 const REST_DENSITY = 3;
-const REST_DENSITY_INV = 1 / REST_DENSITY;
-const INTERACTION_RADIUS = 1.5;
+const INTERACTION_RADIUS = 2;
 const CELLS_PER_IR = 3;
 const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS;
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2;
-const GRAVITY = [0, -18];
+const GRAVITY = [0, -22];
 const VISCOSITY = 0.01;
-const WALL_FRICTION = 0.5;
-const WALL_DISTANCE = 0.1 * INTERACTION_RADIUS;
-const WALL_DISTANCE_INV = 1 / WALL_DISTANCE;
 
 console.log({
   PARTICLE_COUNT,
@@ -56,7 +60,7 @@ console.log({
 });
 
 const vars = {
-  pos: new Float32Array(PARTICLE_COUNT * 2),
+  pos: new Float32Array(PARTICLE_COUNT * 3),
   oldX: new Float32Array(PARTICLE_COUNT),
   oldY: new Float32Array(PARTICLE_COUNT),
   vx: new Float32Array(PARTICLE_COUNT),
@@ -86,18 +90,20 @@ renderer.setSize(width, height);
 
 const viewportHeight = calculateViewportHeight(75, 30);
 const boundingArea = {
-  w: viewportHeight * 0.66,
-  h: viewportHeight * 0.66,
-  l: viewportHeight * -0.33,
-  r: viewportHeight * 0.33,
-  t: viewportHeight * 0.33,
-  b: viewportHeight * -0.33
+  w: viewportHeight,
+  h: viewportHeight,
+  l: viewportHeight * -0.5,
+  r: viewportHeight * 0.5,
+  t: viewportHeight * 0.5,
+  b: viewportHeight * -0.5
 };
 
-const screenToWorldSpace = ({ x, y }) => ({
-  x: (((-0.5 + x / width) * viewportHeight) / height) * width,
-  y: -1 * (-0.5 + y / height) * viewportHeight
-});
+const screenToWorldSpace = ({ x, y }) => {
+  return {
+    x: (x / width - .5 * (window.innerWidth - width) / width -.5) * boundingArea.w,
+    y: (y / height - .5 * (window.innerHeight - height) / height -.5) * -boundingArea.h  
+  }
+};
 
 const light = new PointLight(0xffffff, 1, 100);
 light.position.set(20, 10, 30);
@@ -106,34 +112,63 @@ scene.add(light);
 const mouse = [-1000, -1000];
 let mouseDown = false;
 
+const planeGeometry = new PlaneGeometry(viewportHeight, viewportHeight);
+const planeMaterial = new ShaderMaterial(BlendPointsShader);
+const plane = new Mesh(planeGeometry, planeMaterial);
+
+const data = new Uint8Array(4 * GRID_CELLS * GRID_CELLS);
+
+planeMaterial.uniforms.resolution.value.set(
+  canvas.offsetWidth * dpr,
+  canvas.offsetHeight * dpr
+);
+planeMaterial.uniforms.grid.value = new DataTexture(
+  data,
+  GRID_CELLS,
+  GRID_CELLS,
+  RGBAFormat,
+  UnsignedByteType
+);
+
+for (let i = 0; i < data.length; i += 4) {
+  data[i] = Math.random() * 255;
+  data[i + 1] = Math.random() * 255;
+  data[i + 2] = Math.random() * 255;
+  data[i + 3] = Math.floor(Math.random() * 10);
+}
+
+planeMaterial.uniforms.grid.value.needsUpdate = true;
+
+scene.add(plane);
+
 for (let i = 0; i < PARTICLE_COUNT; i++) {
-  vars.pos[i * 2] = boundingArea.l + Math.random() * boundingArea.w;
-  vars.pos[i * 2 + 1] = boundingArea.b + Math.random() * boundingArea.h;
-  vars.oldX[i] = vars.pos[i * 2];
-  vars.oldY[i] = vars.pos[i * 2 + 1];
+  vars.pos[i * 3] = boundingArea.l + Math.random() * boundingArea.w;
+  vars.pos[i * 3 + 1] = boundingArea.b + Math.random() * boundingArea.h;
+  vars.oldX[i] = vars.pos[i * 3];
+  vars.oldY[i] = vars.pos[i * 3 + 1];
   vars.vx[i] = 0;
   vars.vy[i] = 0;
   vars.color[i] = Math.floor(Math.random() * 3);
 }
 
-const geometry = new BufferGeometry();
-console.log(Array.from(vars.color).map(i => colors[i]));
-geometry.addAttribute("position", new BufferAttribute(vars.pos, 2));
-const colorAttribute = vars.color.reduce((result, color, i) => {
-  result[i * 3] = colors[color].r;
-  result[i * 3 + 1] = colors[color].g;
-  result[i * 3 + 2] = colors[color].b;
-  return result;
-}, new Float32Array(vars.color.length * 3));
-geometry.addAttribute("color", new BufferAttribute(colorAttribute, 3));
+// const geometry = new BufferGeometry();
+// geometry.addAttribute("position", new BufferAttribute(vars.pos, 3));
 
-const material = new PointsMaterial({
-  size: (viewportHeight / window.innerHeight / 0.66) * 6,
-  vertexColors: VertexColors
-});
+// const colorAttribute = vars.color.reduce((result, color, i) => {
+//   result[i * 3] = colors[color].r;
+//   result[i * 3 + 1] = colors[color].g;
+//   result[i * 3 + 2] = colors[color].b;
+//   return result;
+// }, new Float32Array(vars.color.length * 3));
+// geometry.addAttribute("color", new BufferAttribute(colorAttribute, 3));
 
-const points = new Points(geometry, material);
-scene.add(points);
+// const material = new PointsMaterial({
+//   size: 0.5,
+//   vertexColors: VertexColors
+// });
+
+// const points = new Points(geometry, material);
+// scene.add(points);
 
 const hashMap = new SpatialHashMap(
   boundingArea.r,
@@ -145,19 +180,19 @@ const simulate = dt => {
   hashMap.clear();
 
   for (let i = 0; i < PARTICLE_COUNT; i++) {
-    vars.oldX[i] = vars.pos[i * 2];
-    vars.oldY[i] = vars.pos[i * 2 + 1];
+    vars.oldX[i] = vars.pos[i * 3];
+    vars.oldY[i] = vars.pos[i * 3 + 1];
 
     applyGlobalForces(i, dt);
 
-    vars.pos[i * 2] += vars.vx[i] * dt;
-    vars.pos[i * 2 + 1] += vars.vy[i] * dt;
+    vars.pos[i * 3] += vars.vx[i] * dt;
+    vars.pos[i * 3 + 1] += vars.vy[i] * dt;
 
-    hashMap.add(vars.pos[i * 2], vars.pos[i * 2 + 1], i);
+    hashMap.add(vars.pos[i * 3], vars.pos[i * 3 + 1], i);
   }
 
   for (let i = 0; i < PARTICLE_COUNT; i++) {
-    const results = hashMap.query(vars.pos[i * 2], vars.pos[i * 2 + 1]);
+    const results = hashMap.query(vars.pos[i * 3], vars.pos[i * 3 + 1]);
     let neighbors = [];
 
     for (let k = 0; k < results.length; k++) {
@@ -188,18 +223,18 @@ const simulate = dt => {
     calculateVelocity(i, dt);
 
     // Update
-    geometry.attributes.position.needsUpdate = true;
+    // geometry.attributes.position.needsUpdate = true;
   }
 };
 
 const applyGlobalForces = (i, dt) => {
   let force = Array.from(GRAVITY);
 
-  force[1] += vars.color[i] / 5;
+  force[1] += vars.color[i];
 
   if (mouseDown) {
-    const fromMouse = subtract([vars.pos[i * 2], vars.pos[i * 2 + 1]], mouse);
-    const scalar = Math.min(100, 1000 / lengthSq(fromMouse));
+    const fromMouse = subtract([vars.pos[i * 3], vars.pos[i * 3 + 1]], mouse);
+    const scalar = Math.min(150, 1500 / lengthSq(fromMouse));
     const mouseForce = multiplyScalar(unitApprox(fromMouse), scalar);
     force = add(force, mouseForce);
   }
@@ -225,32 +260,32 @@ const updateDensities = (i, neighbors) => {
 };
 
 const relax = (i, neighbors, dt) => {
-  const p = [vars.pos[i * 2], vars.pos[i * 2 + 1]];
+  const p = [vars.pos[i * 3], vars.pos[i * 3 + 1]];
 
   for (let k = 0; k < neighbors.length; k++) {
     const j = neighbors[k][0];
     const g = neighbors[k][1];
-    const n = [vars.pos[j * 2], vars.pos[j * 2 + 1]];
+    const n = [vars.pos[j * 3], vars.pos[j * 3 + 1]];
 
     const magnitude = vars.p[i] * g + vars.pNear[i] * g * g;
-    const f = 1; // (vars.color[i] === vars.color[j]) ? 1.1 : .9
+    const f = (vars.color[i] === vars.color[j]) ? 1.1 : .9
     const d = multiplyScalar(
       unitApprox(subtract(n, p)),
       magnitude * f * dt * dt
     );
 
-    vars.pos[i * 2] -= d[0] * 0.5;
-    vars.pos[i * 2 + 1] -= d[1] * 0.5;
+    vars.pos[i * 3] -= d[0] * 0.5;
+    vars.pos[i * 3 + 1] -= d[1] * 0.5;
 
-    vars.pos[j * 2] += d[0] * 0.5;
-    vars.pos[j * 2 + 1] += d[1] * 0.5;
+    vars.pos[j * 3] += d[0] * 0.5;
+    vars.pos[j * 3 + 1] += d[1] * 0.5;
   }
 };
 
 const particleGradient = (i, j) => {
   return gradient(
-    [vars.pos[i * 2], vars.pos[i * 2 + 1]],
-    [vars.pos[j * 2], vars.pos[j * 2 + 1]]
+    [vars.pos[i * 3], vars.pos[i * 3 + 1]],
+    [vars.pos[j * 3], vars.pos[j * 3 + 1]]
   );
 };
 
@@ -270,26 +305,26 @@ const gradient = (a, b) => {
 };
 
 const contain = (i, dt) => {
-  const sx = Math.sign(vars.pos[i * 2]);
-  const sy = Math.sign(vars.pos[i * 2 + 1]);
+  const sx = Math.sign(vars.pos[i * 3]);
+  const sy = Math.sign(vars.pos[i * 3 + 1]);
 
-  if (vars.pos[i * 2] * sx > boundingArea.r) {
-    //  vars.pos[i * 2] = boundingArea.t * sx
-    const dx = vars.pos[i * 2] - vars.oldX[i];
-    vars.pos[i * 2] = 2 * boundingArea.t * sx - vars.pos[i * 2];
-    vars.oldX[i] = vars.pos[i * 2] + dx;
+  if (vars.pos[i * 3] * sx > boundingArea.r) {
+    //  vars.pos[i * 3] = boundingArea.t * sx
+    const dx = vars.pos[i * 3] - vars.oldX[i];
+    vars.pos[i * 3] = 2 * boundingArea.t * sx - vars.pos[i * 3];
+    vars.oldX[i] = vars.pos[i * 3] + dx * 0.5;
   }
 
-  if (vars.pos[i * 2 + 1] * sy > boundingArea.t) {
-    // vars.pos[i * 2 + 1] = boundingArea.t * sy
-    const dy = vars.pos[i * 2 + 1] - vars.oldY[i];
-    vars.pos[i * 2 + 1] = 2 * boundingArea.t * sy - vars.pos[i * 2 + 1];
-    vars.oldY[i] = vars.pos[i * 2 + 1] + dy;
+  if (vars.pos[i * 3 + 1] * sy > boundingArea.t) {
+    // vars.pos[i * 3 + 1] = boundingArea.t * sy
+    const dy = vars.pos[i * 3 + 1] - vars.oldY[i];
+    vars.pos[i * 3 + 1] = 2 * boundingArea.t * sy - vars.pos[i * 3 + 1];
+    vars.oldY[i] = vars.pos[i * 3 + 1] + dy * 0.5;
   }
 };
 
 const calculateVelocity = (i, dt) => {
-  const p = [vars.pos[i * 2], vars.pos[i * 2 + 1]];
+  const p = [vars.pos[i * 3], vars.pos[i * 3 + 1]];
   const old = [vars.oldX[i], vars.oldY[i]];
 
   const v = multiplyScalar(subtract(p, old), 1 / dt);
@@ -298,12 +333,47 @@ const calculateVelocity = (i, dt) => {
   vars.vy[i] = v[1];
 };
 
-const composer = new EffectComposer(renderer);
-const renderPass = new RenderPass(scene, camera);
-composer.addPass(renderPass);
-const sepiaPass = new ShaderPass(SepiaShader);
-sepiaPass.renderToScreen = true;
-composer.addPass(sepiaPass);
+const sample = () => {
+  const stride = 4;
+  const color = new Color(0x000000);
+
+  for (let i = 0; i < GRID_CELLS * GRID_CELLS; i++) {
+    const x = boundingArea.l + ((i % GRID_CELLS) / GRID_CELLS) * boundingArea.w;
+    const y =
+      boundingArea.b +
+      (Math.floor(i / GRID_CELLS) / GRID_CELLS) * boundingArea.h;
+    const particles = hashMap.query(x, y);
+    color.setHex(0x000000);
+
+    const sample = particles.reduce(
+      (result, p) => {
+        result.count++;
+        result.color = result.color.lerp(
+          colors[vars.color[p]],
+          1 / result.count
+        );
+        return result;
+      },
+      { count: 0, color }
+    );
+
+    data[i * stride] = sample.color.r * 255;
+    data[i * stride + 1] = sample.color.g * 255;
+    data[i * stride + 2] = sample.color.b * 255;
+    data[i * stride + 3] = sample.count;
+  }
+
+  planeMaterial.uniforms.grid.value.needsUpdate = true;
+};
+
+// const composer = new EffectComposer(renderer);
+// const renderPass = new RenderPass(c);
+// renderPass.renderToScreen = true;
+// composer.addPass(renderPass);
+
+// const blendPointsPass = new ShaderPass(BlendPointsShader);
+// blendPointsPass.renderToScreen = true;
+// composer.addPass(blendPointsPass);
 
 const maxFrameDuration = 1 / 20;
 
@@ -312,11 +382,12 @@ let tPrev;
 
 function loop() {
   const t = performance.now();
-  simulate(1 / 60);
-  // simulate(Math.min((t - tPrev) / 1000, maxFrameDuration))
+  // simulate(1 / 60);
+  simulate(Math.min((t - tPrev) / 1000, maxFrameDuration))
+  sample();
   tPrev = t;
 
-  composer.render();
+  renderer.render(scene, camera);
   frame = requestAnimationFrame(loop);
 }
 
