@@ -10,8 +10,8 @@ const BlendPointsShader = {
 		resolution: {
 			value: new Vector2(window.innerWidth * dpr, window.innerHeight * dpr)
 		},
-		horizontalCells: { value: 80 },
-		verticalCells: { value: 80 },
+		horizontalCells: { value: 64 },
+		verticalCells: { value: 64 },
 		grid: {
 			value: null
 		}

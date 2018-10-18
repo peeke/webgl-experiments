@@ -38,17 +38,24 @@ import {
   lerp
 } from "../../js/2dVectorOperations";
 
-const PARTICLE_COUNT = 800;
-const GRID_CELLS = 80;
+const calculateViewportHeight = (perspectiveAngle, distance) => {
+  return Math.tan((perspectiveAngle / 2 / 180) * Math.PI) * distance * 2;
+};
 
-const STIFFNESS = 12;
-const STIFFNESS_NEAR = 18;
-const REST_DENSITY = 3;
-const INTERACTION_RADIUS = 2;
-const CELLS_PER_IR = 3;
+const viewportHeight = calculateViewportHeight(75, 30);
+
+const PARTICLE_COUNT = 2000;
+const GRID_CELLS = 64;
+const RENDER_POINTS = true;
+const RENDER_PLANE = false;
+
+const STIFFNESS = 6;
+const STIFFNESS_NEAR = 20;
+const REST_DENSITY = 1;
+const INTERACTION_RADIUS = (viewportHeight / GRID_CELLS) * 2;
 const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS;
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2;
-const GRAVITY = [0, -22];
+const GRAVITY = [0, -20];
 const VISCOSITY = 0.01;
 
 console.log({
@@ -76,9 +83,6 @@ const colors = [new Color(0xff4e91), new Color(0xffe04e), new Color(0x3568e5)];
 const canvas = document.querySelector("#canvas");
 const dpr = window.devicePixelRatio;
 const { offsetWidth: width, offsetHeight: height } = canvas;
-const calculateViewportHeight = (perspectiveAngle, distance) => {
-  return Math.tan((perspectiveAngle / 2 / 180) * Math.PI) * distance * 2;
-};
 
 const scene = new Scene();
 const camera = new PerspectiveCamera(75, width / height, 0.1, 1000);
@@ -88,7 +92,6 @@ const renderer = new WebGLRenderer({ canvas, alpha: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(width, height);
 
-const viewportHeight = calculateViewportHeight(75, 30);
 const boundingArea = {
   w: viewportHeight,
   h: viewportHeight,
@@ -98,12 +101,23 @@ const boundingArea = {
   b: viewportHeight * -0.5
 };
 
-const screenToWorldSpace = ({ x, y }) => {
-  return {
-    x: (x / width - .5 * (window.innerWidth - width) / width -.5) * boundingArea.w,
-    y: (y / height - .5 * (window.innerHeight - height) / height -.5) * -boundingArea.h  
-  }
-};
+window.boundingArea = boundingArea;
+
+const screenToWorldSpace = ({ x, y }) => ({
+  x:
+    (x / width - (0.5 * (window.innerWidth - width)) / width - 0.5) *
+    boundingArea.w,
+  y:
+    (y / height - (0.5 * (window.innerHeight - height)) / height - 0.5) *
+    -boundingArea.h
+});
+
+const worldXToGridX = x =>
+  ((x + boundingArea.w / 2) / boundingArea.w) * GRID_CELLS;
+const worldYToGridY = y =>
+  ((y + boundingArea.h / 2) / boundingArea.h) * GRID_CELLS;
+
+const hashMap = new SpatialHashMap(GRID_CELLS, GRID_CELLS);
 
 const light = new PointLight(0xffffff, 1, 100);
 light.position.set(20, 10, 30);
@@ -130,16 +144,9 @@ planeMaterial.uniforms.grid.value = new DataTexture(
   UnsignedByteType
 );
 
-for (let i = 0; i < data.length; i += 4) {
-  data[i] = Math.random() * 255;
-  data[i + 1] = Math.random() * 255;
-  data[i + 2] = Math.random() * 255;
-  data[i + 3] = Math.floor(Math.random() * 10);
+if (RENDER_PLANE) {
+  scene.add(plane);
 }
-
-planeMaterial.uniforms.grid.value.needsUpdate = true;
-
-scene.add(plane);
 
 for (let i = 0; i < PARTICLE_COUNT; i++) {
   vars.pos[i * 3] = boundingArea.l + Math.random() * boundingArea.w;
@@ -149,32 +156,36 @@ for (let i = 0; i < PARTICLE_COUNT; i++) {
   vars.vx[i] = 0;
   vars.vy[i] = 0;
   vars.color[i] = Math.floor(Math.random() * 3);
+
+  hashMap.add(
+    worldXToGridX(vars.pos[i * 3]),
+    worldYToGridY(vars.pos[i * 3 + 1]),
+    i
+  );
 }
 
-// const geometry = new BufferGeometry();
-// geometry.addAttribute("position", new BufferAttribute(vars.pos, 3));
+let geometry;
+const colorAttribute = vars.color.reduce((result, color, i) => {
+  result[i * 3] = colors[color].r;
+  result[i * 3 + 1] = colors[color].g;
+  result[i * 3 + 2] = colors[color].b;
+  return result;
+}, new Float32Array(vars.color.length * 3));
 
-// const colorAttribute = vars.color.reduce((result, color, i) => {
-//   result[i * 3] = colors[color].r;
-//   result[i * 3 + 1] = colors[color].g;
-//   result[i * 3 + 2] = colors[color].b;
-//   return result;
-// }, new Float32Array(vars.color.length * 3));
-// geometry.addAttribute("color", new BufferAttribute(colorAttribute, 3));
+if (RENDER_POINTS) {
+  geometry = new BufferGeometry();
+  geometry.addAttribute("position", new BufferAttribute(vars.pos, 3));
 
-// const material = new PointsMaterial({
-//   size: 0.5,
-//   vertexColors: VertexColors
-// });
+  geometry.addAttribute("color", new BufferAttribute(colorAttribute, 3));
 
-// const points = new Points(geometry, material);
-// scene.add(points);
+  const material = new PointsMaterial({
+    size: 0.5,
+    vertexColors: VertexColors
+  });
 
-const hashMap = new SpatialHashMap(
-  boundingArea.r,
-  INTERACTION_RADIUS / CELLS_PER_IR,
-  INTERACTION_RADIUS
-);
+  const points = new Points(geometry, material);
+  scene.add(points);
+}
 
 const simulate = dt => {
   hashMap.clear();
@@ -188,11 +199,19 @@ const simulate = dt => {
     vars.pos[i * 3] += vars.vx[i] * dt;
     vars.pos[i * 3 + 1] += vars.vy[i] * dt;
 
-    hashMap.add(vars.pos[i * 3], vars.pos[i * 3 + 1], i);
+    hashMap.add(
+      worldXToGridX(vars.pos[i * 3]),
+      worldYToGridY(vars.pos[i * 3 + 1]),
+      i
+    );
   }
 
   for (let i = 0; i < PARTICLE_COUNT; i++) {
-    const results = hashMap.query(vars.pos[i * 3], vars.pos[i * 3 + 1]);
+    const results = hashMap.query(
+      worldXToGridX(vars.pos[i * 3]),
+      worldYToGridY(vars.pos[i * 3 + 1]),
+      (INTERACTION_RADIUS / boundingArea.w) * GRID_CELLS * 1.5
+    );
     let neighbors = [];
 
     for (let k = 0; k < results.length; k++) {
@@ -201,13 +220,6 @@ const simulate = dt => {
       const g = particleGradient(i, j);
       if (!g) continue;
       neighbors.push([j, g]);
-    }
-
-    contain(i, dt);
-
-    for (let k = 0; k < neighbors.length; k++) {
-      const j = neighbors[k][0];
-      contain(j, dt);
     }
 
     updateDensities(i, neighbors);
@@ -223,14 +235,17 @@ const simulate = dt => {
     calculateVelocity(i, dt);
 
     // Update
-    // geometry.attributes.position.needsUpdate = true;
+    if (RENDER_POINTS) {
+      geometry.attributes.position.needsUpdate = true;
+      geometry.attributes.color.needsUpdate = true;
+    }
   }
 };
 
 const applyGlobalForces = (i, dt) => {
   let force = Array.from(GRAVITY);
 
-  force[1] += vars.color[i];
+  // force[1] += vars.color[i];
 
   if (mouseDown) {
     const fromMouse = subtract([vars.pos[i * 3], vars.pos[i * 3 + 1]], mouse);
@@ -268,7 +283,7 @@ const relax = (i, neighbors, dt) => {
     const n = [vars.pos[j * 3], vars.pos[j * 3 + 1]];
 
     const magnitude = vars.p[i] * g + vars.pNear[i] * g * g;
-    const f = (vars.color[i] === vars.color[j]) ? 1.1 : .9
+    const f = 1; // vars.color[i] === vars.color[j] ? 1.2 : 0.8;
     const d = multiplyScalar(
       unitApprox(subtract(n, p)),
       magnitude * f * dt * dt
@@ -309,17 +324,13 @@ const contain = (i, dt) => {
   const sy = Math.sign(vars.pos[i * 3 + 1]);
 
   if (vars.pos[i * 3] * sx > boundingArea.r) {
-    //  vars.pos[i * 3] = boundingArea.t * sx
-    const dx = vars.pos[i * 3] - vars.oldX[i];
-    vars.pos[i * 3] = 2 * boundingArea.t * sx - vars.pos[i * 3];
-    vars.oldX[i] = vars.pos[i * 3] + dx * 0.5;
+    vars.pos[i * 3] = boundingArea.r * sx;
+    // vars.oldX[i] = vars.pos[i * 3]
   }
 
   if (vars.pos[i * 3 + 1] * sy > boundingArea.t) {
-    // vars.pos[i * 3 + 1] = boundingArea.t * sy
-    const dy = vars.pos[i * 3 + 1] - vars.oldY[i];
-    vars.pos[i * 3 + 1] = 2 * boundingArea.t * sy - vars.pos[i * 3 + 1];
-    vars.oldY[i] = vars.pos[i * 3 + 1] + dy * 0.5;
+    vars.pos[i * 3 + 1] = boundingArea.t * sy;
+    // vars.oldY[i] = vars.pos[i * 3 + 1]
   }
 };
 
@@ -337,30 +348,28 @@ const sample = () => {
   const stride = 4;
   const color = new Color(0x000000);
 
-  for (let i = 0; i < GRID_CELLS * GRID_CELLS; i++) {
-    const x = boundingArea.l + ((i % GRID_CELLS) / GRID_CELLS) * boundingArea.w;
-    const y =
-      boundingArea.b +
-      (Math.floor(i / GRID_CELLS) / GRID_CELLS) * boundingArea.h;
-    const particles = hashMap.query(x, y);
-    color.setHex(0x000000);
+  for (let i = 0; i < GRID_CELLS; i++) {
+    for (let j = 0; j < GRID_CELLS; j++) {
+      color.setHex(0x000000);
 
-    const sample = particles.reduce(
-      (result, p) => {
-        result.count++;
-        result.color = result.color.lerp(
-          colors[vars.color[p]],
-          1 / result.count
-        );
-        return result;
-      },
-      { count: 0, color }
-    );
+      const sampleDensity = hashMap.query(i, j).length;
+      const sampleColor = hashMap.query(i, j, 1).reduce(
+        (result, p) => {
+          result.count++;
+          result.color = result.color.lerp(
+            colors[vars.color[p]],
+            1 / result.count
+          );
+          return result;
+        },
+        { color, count: 0 }
+      ).color;
 
-    data[i * stride] = sample.color.r * 255;
-    data[i * stride + 1] = sample.color.g * 255;
-    data[i * stride + 2] = sample.color.b * 255;
-    data[i * stride + 3] = sample.count;
+      data[(i + j * GRID_CELLS) * stride] = sampleColor.r * 255;
+      data[(i + j * GRID_CELLS) * stride + 1] = sampleColor.g * 255;
+      data[(i + j * GRID_CELLS) * stride + 2] = sampleColor.b * 255;
+      data[(i + j * GRID_CELLS) * stride + 3] = sampleDensity;
+    }
   }
 
   planeMaterial.uniforms.grid.value.needsUpdate = true;
@@ -381,13 +390,14 @@ let frame;
 let tPrev;
 
 function loop() {
+  renderer.render(scene, camera);
+
   const t = performance.now();
   // simulate(1 / 60);
-  simulate(Math.min((t - tPrev) / 1000, maxFrameDuration))
+  simulate(Math.min((t - tPrev) / 1000, maxFrameDuration));
   sample();
   tPrev = t;
 
-  renderer.render(scene, camera);
   frame = requestAnimationFrame(loop);
 }
 
@@ -410,6 +420,10 @@ window.addEventListener("mousemove", e => {
   const { x, y } = screenToWorldSpace({ x: e.clientX, y: e.clientY });
   mouse[0] = x;
   mouse[1] = y;
+
+  // const mouseNeighbors = hashMap.query(worldXToGridX(x), worldXToGridX(y))
+  // const p = mouseNeighbors.reduce((result, i) => result + vars.pNear[i], 0) / mouseNeighbors.length
+  // console.log(p)
 });
 
 window.addEventListener("mousedown", () => (mouseDown = true));

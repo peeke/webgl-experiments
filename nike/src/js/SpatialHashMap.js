@@ -1,41 +1,86 @@
 class SpatialHashMap {
 
-  constructor(rowWidth, cellSize, resolution) {
-    this.rowWidth = rowWidth
-    this.cellWidth = cellSize
-    this.resolution = resolution
-    this.cellWidthInv = 1 / this.cellWidth
-    this.cellsInRow = Math.ceil(rowWidth / cellSize)
-    this.grid = {}
+  constructor(width, height) {
+    this.width = width
+    this.height = height
+
+    this.grid = new Array(width * height).fill(null).map(() => [])
     this.cache = {}
   }
 
   clear() {
-    this.grid = {}
+    this.grid.forEach(cell => { cell.splice(0) })
     this.cache = {}
   }
 
-  add(x, y, obj) {
-    const index = this.index(x, y)
-    if (!this.grid[index]) {
-      this.grid[index] = []
+  add(x, y, data) {
+    x = Math.round(x)
+    y = Math.round(y)
+
+    if (x < 0) {
+      x = 0
+    } else if (x >= this.width) {
+      x = this.width - 1
     }
-    this.grid[index].push(obj)
+    
+    if (y < 0) {
+      y = 0
+    } else if (y >= this.height) {
+      y = this.height - 1
+    }
+
+    const index = x + y * this.width
+    this.grid[index].push(data)
   }
 
-  query(x, y) {
-    const index = this.index(x, y)
+  query(x, y, radius) {
+
+    if (radius) {
+      return this.queryWithRadius(x, y, radius)
+    }
+
+    x = Math.round(x)
+    y = Math.round(y)
+
+    if (x < 0) {
+      x = 0
+    } else if (x >= this.width) {
+      x = this.width - 1
+    }
+    
+    if (y < 0) {
+      y = 0
+    } else if (y >= this.height) {
+      y = this.height - 1
+    }
+    
+    const index = x + y * this.width
+    return this.grid[index]
+  }
+
+  queryWithRadius(x, y, radius) {
+    
+    x = Math.round(x)
+    y = Math.round(y)
+
+    const index = x + y * this.width + Math.round(radius) * this.width * this.height
+  
     if (this.cache[index]) {
       return this.cache[index]
     }
 
+    const left = Math.max(Math.round(x - radius), 0)
+    const right = Math.min(Math.round(x + radius), this.width - 1)
+    const bottom = Math.max(Math.round(y - radius), 0)
+    const top = Math.min(Math.round(y + radius), this.height - 1)
+
     const result = []
 
-    for (let i = x - this.resolution; i <= x + this.resolution; i += this.cellWidth) {
-      for (let j = y - this.resolution; j <= y + this.resolution; j += this.cellWidth) {
-        const index = this.index(i, j)
-        if (this.grid[index]) {
-          result.push.apply(result, this.grid[index]);
+    for (let i = left; i <= right; i++) {
+      for (let j = bottom; j <= top; j++) {
+        const query = this.query(i, j)
+        for (let k = 0; k < query.length; k++) {
+          result.push(query[k]);
         }
       }
     }
@@ -43,10 +88,8 @@ class SpatialHashMap {
     this.cache[index] = result
     return result
   }
-
-  index(x, y) {
-    return Math.round(x * this.cellWidthInv) + 2 * Math.round(y * this.cellWidthInv) * this.cellsInRow
-  }
 }
 
 export default SpatialHashMap
+
+window.SpatialHashMap = SpatialHashMap
