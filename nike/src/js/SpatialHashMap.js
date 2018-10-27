@@ -1,95 +1,87 @@
 class SpatialHashMap {
-
   constructor(width, height) {
-    this.width = width
-    this.height = height
+    this.width = width;
+    this.height = height;
 
-    this.grid = new Array(width * height).fill(null).map(() => [])
-    this.cache = {}
+    this.grid = new Array(width * height).fill(null).map(() => []);
+    this.cache = {};
   }
 
   clear() {
-    this.grid.forEach(cell => { cell.splice(0) })
-    this.cache = {}
+    this.grid.forEach(cell => {
+      cell.splice(0);
+    });
+    this.cache = {};
   }
 
   add(x, y, data) {
-    x = Math.round(x)
-    y = Math.round(y)
+    x = Math.round(x);
+    y = Math.round(y);
 
     if (x < 0) {
-      x = 0
+      x = 0;
     } else if (x >= this.width) {
-      x = this.width - 1
-    }
-    
-    if (y < 0) {
-      y = 0
-    } else if (y >= this.height) {
-      y = this.height - 1
+      x = this.width - 1;
     }
 
-    const index = x + y * this.width
-    this.grid[index].push(data)
+    if (y < 0) {
+      y = 0;
+    } else if (y >= this.height) {
+      y = this.height - 1;
+    }
+
+    const index = x + y * this.width;
+    this.grid[index].push(data);
   }
 
   query(x, y, radius) {
-
     if (radius) {
-      return this.queryWithRadius(x, y, radius)
+      return this.queryWithRadius(x, y, radius);
     }
 
-    x = Math.round(x)
-    y = Math.round(y)
+    x = Math.round(x);
+    y = Math.round(y);
 
     if (x < 0) {
-      x = 0
+      x = 0;
     } else if (x >= this.width) {
-      x = this.width - 1
+      x = this.width - 1;
     }
-    
+
     if (y < 0) {
-      y = 0
+      y = 0;
     } else if (y >= this.height) {
-      y = this.height - 1
+      y = this.height - 1;
     }
-    
-    const index = x + y * this.width
-    return this.grid[index]
+
+    const index = x + y * this.width;
+    return this.grid[index];
   }
 
   queryWithRadius(x, y, radius) {
-    
-    x = Math.round(x)
-    y = Math.round(y)
+    // x = Math.round(x);
+    // y = Math.round(y);
 
-    const index = x + y * this.width + Math.round(radius) * this.width * this.height
-  
-    if (this.cache[index]) {
-      return this.cache[index]
-    }
+    const left = Math.max(Math.round(x - radius), 0);
+    const right = Math.min(Math.round(x + radius), this.width - 1);
+    const bottom = Math.max(Math.round(y - radius), 0);
+    const top = Math.min(Math.round(y + radius), this.height - 1);
 
-    const left = Math.max(Math.round(x - radius), 0)
-    const right = Math.min(Math.round(x + radius), this.width - 1)
-    const bottom = Math.max(Math.round(y - radius), 0)
-    const top = Math.min(Math.round(y + radius), this.height - 1)
-
-    const result = []
+    const result = [];
 
     for (let i = left; i <= right; i++) {
       for (let j = bottom; j <= top; j++) {
-        const query = this.query(i, j)
+        const query = this.query(i, j);
         for (let k = 0; k < query.length; k++) {
           result.push(query[k]);
         }
       }
     }
 
-    this.cache[index] = result
-    return result
+    return result;
   }
 }
 
-export default SpatialHashMap
+export default SpatialHashMap;
 
-window.SpatialHashMap = SpatialHashMap
+window.SpatialHashMap = SpatialHashMap;

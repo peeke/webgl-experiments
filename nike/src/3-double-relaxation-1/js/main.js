@@ -46,19 +46,21 @@ const viewportHeight = calculateViewportHeight(75, 30);
 
 const PARTICLE_COUNT = 2000;
 const GRID_CELLS = 64;
-const RENDER_POINTS = true;
-const RENDER_PLANE = false;
+const RENDER_POINTS = false;
+const RENDER_PLANE = true;
 
 const STIFFNESS = 6;
 const STIFFNESS_NEAR = 20;
-const REST_DENSITY = 1;
+const REST_DENSITY = 3;
 const INTERACTION_RADIUS = (viewportHeight / GRID_CELLS) * 2;
+const UNCERTAINTY = INTERACTION_RADIUS;
 const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS;
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2;
 const GRAVITY = [0, -20];
 const VISCOSITY = 0.01;
 
 console.log({
+  UNCERTAINTY,
   PARTICLE_COUNT,
   REST_DENSITY,
   INTERACTION_RADIUS,
@@ -199,6 +201,8 @@ const simulate = dt => {
     vars.pos[i * 3] += vars.vx[i] * dt;
     vars.pos[i * 3 + 1] += vars.vy[i] * dt;
 
+    contain(i, dt);
+
     hashMap.add(
       worldXToGridX(vars.pos[i * 3]),
       worldYToGridY(vars.pos[i * 3 + 1]),
@@ -226,11 +230,16 @@ const simulate = dt => {
 
     // perform double density relaxation
     relax(i, neighbors, dt);
+
+    contain(i, dt);
+
+    for (let k = 0; k < results.length; k++) {
+      const j = results[k];
+      contain(j, dt);
+    }
   }
 
   for (let i = 0; i < PARTICLE_COUNT; i++) {
-    contain(i, dt);
-
     // Calculate new velocities
     calculateVelocity(i, dt);
 
@@ -245,7 +254,7 @@ const simulate = dt => {
 const applyGlobalForces = (i, dt) => {
   let force = Array.from(GRAVITY);
 
-  // force[1] += vars.color[i];
+  force[1] += vars.color[i];
 
   if (mouseDown) {
     const fromMouse = subtract([vars.pos[i * 3], vars.pos[i * 3 + 1]], mouse);
@@ -276,14 +285,13 @@ const updateDensities = (i, neighbors) => {
 
 const relax = (i, neighbors, dt) => {
   const p = [vars.pos[i * 3], vars.pos[i * 3 + 1]];
-
   for (let k = 0; k < neighbors.length; k++) {
     const j = neighbors[k][0];
     const g = neighbors[k][1];
     const n = [vars.pos[j * 3], vars.pos[j * 3 + 1]];
 
     const magnitude = vars.p[i] * g + vars.pNear[i] * g * g;
-    const f = 1; // vars.color[i] === vars.color[j] ? 1.2 : 0.8;
+    const f = vars.color[i] === vars.color[j] ? 0.99 : 1.01;
     const d = multiplyScalar(
       unitApprox(subtract(n, p)),
       magnitude * f * dt * dt
@@ -324,13 +332,13 @@ const contain = (i, dt) => {
   const sy = Math.sign(vars.pos[i * 3 + 1]);
 
   if (vars.pos[i * 3] * sx > boundingArea.r) {
-    vars.pos[i * 3] = boundingArea.r * sx;
-    // vars.oldX[i] = vars.pos[i * 3]
+    const dx = Math.max(0, (Math.random() - 0.5) * UNCERTAINTY * dt);
+    vars.pos[i * 3] = (boundingArea.r - dx) * sx;
   }
 
   if (vars.pos[i * 3 + 1] * sy > boundingArea.t) {
-    vars.pos[i * 3 + 1] = boundingArea.t * sy;
-    // vars.oldY[i] = vars.pos[i * 3 + 1]
+    const dy = Math.max(0, (Math.random() - 0.5) * UNCERTAINTY * dt);
+    vars.pos[i * 3 + 1] = (boundingArea.t - dy) * sy;
   }
 };
 
