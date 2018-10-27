@@ -14,7 +14,9 @@ import {
   Color,
   DataTexture,
   RGBAFormat,
-  UnsignedByteType
+  UnsignedByteType,
+  LinearFilter,
+  NearestFilter
 } from "three";
 
 import BlendPointsShader from "./BlendPointsShader";
@@ -41,20 +43,22 @@ const calculateViewportHeight = (perspectiveAngle, distance) => {
 const viewportHeight = calculateViewportHeight(75, 30);
 
 const PARTICLE_COUNT = 2000;
-const GRID_CELLS = 64;
+const GRID_CELLS = 48;
 const RENDER_POINTS = false;
 const RENDER_PLANE = true;
 const RECORD = false;
 
-const STIFFNESS = 6;
+const STIFFNESS = 30;
 const STIFFNESS_NEAR = 20;
-const REST_DENSITY = 3;
+const REST_DENSITY = 6;
 const INTERACTION_RADIUS = (viewportHeight / GRID_CELLS) * 2;
 const UNCERTAINTY = INTERACTION_RADIUS;
 const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS;
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2;
-const GRAVITY = [0, -23];
+const GRAVITY = [0, -35];
 const VISCOSITY = 0.01;
+
+const colors = [new Color(0xe3eaed), new Color(0x16e4c0), new Color(0x29257f)];
 
 console.log({
   UNCERTAINTY,
@@ -76,8 +80,6 @@ const vars = {
   color: new Uint8Array(PARTICLE_COUNT)
   // mesh: []
 };
-
-const colors = [new Color(0xff4e91), new Color(0xffe04e), new Color(0x3568e5)];
 
 const canvas = document.querySelector("#canvas");
 const dpr = window.devicePixelRatio;
@@ -117,6 +119,10 @@ const worldXToGridX = x =>
 const worldYToGridY = y =>
   ((y + boundingArea.h / 2) / boundingArea.h) * GRID_CELLS;
 
+const mass = i => {
+  return 0.7 + vars.color[i] / 5;
+};
+
 const hashMap = new SpatialHashMap(GRID_CELLS, GRID_CELLS);
 
 const light = new PointLight(0xffffff, 1, 100);
@@ -136,13 +142,17 @@ planeMaterial.uniforms.resolution.value.set(
   canvas.offsetWidth * dpr,
   canvas.offsetHeight * dpr
 );
-planeMaterial.uniforms.grid.value = new DataTexture(
+
+const dataTexture = new DataTexture(
   data,
   GRID_CELLS,
   GRID_CELLS,
   RGBAFormat,
   UnsignedByteType
 );
+
+dataTexture.magFilter = LinearFilter;
+planeMaterial.uniforms.grid.value = dataTexture;
 
 if (RENDER_PLANE) {
   scene.add(plane);
@@ -212,7 +222,7 @@ const simulate = dt => {
     const results = hashMap.query(
       worldXToGridX(vars.pos[i * 3]),
       worldYToGridY(vars.pos[i * 3 + 1]),
-      (INTERACTION_RADIUS / boundingArea.w) * GRID_CELLS * 1.5
+      (INTERACTION_RADIUS / boundingArea.w) * GRID_CELLS * 2
     );
     let neighbors = [];
 
@@ -250,18 +260,21 @@ const simulate = dt => {
 };
 
 const applyGlobalForces = (i, dt) => {
-  let force = Array.from(GRAVITY);
+  let force = [0, 0];
+  const m = mass(i);
+  force = add(force, multiplyScalar(Array.from(GRAVITY), m));
 
-  force[1] += vars.color[i];
+  // f = m * a
+  // a = f / m
 
   if (mouseDown) {
     const fromMouse = subtract([vars.pos[i * 3], vars.pos[i * 3 + 1]], mouse);
-    const scalar = Math.min(150, 1500 / lengthSq(fromMouse));
+    const scalar = Math.min(500, 5000 / lengthSq(fromMouse));
     const mouseForce = multiplyScalar(unitApprox(fromMouse), scalar);
     force = add(force, mouseForce);
   }
 
-  const dv = multiplyScalar(force, dt);
+  const dv = multiplyScalar(force, dt / m);
 
   vars.vx[i] += dv[0];
   vars.vy[i] += dv[1];
@@ -273,12 +286,14 @@ const updateDensities = (i, neighbors) => {
 
   for (let k = 0; k < neighbors.length; k++) {
     const g = neighbors[k][1];
-    density += g * g;
-    nearDensity += g * g * g;
+    const m = mass(i);
+    density += g * g * m;
+    nearDensity += g * g * g * m;
   }
 
-  vars.p[i] = STIFFNESS * (density - REST_DENSITY);
-  vars.pNear[i] = STIFFNESS_NEAR * nearDensity;
+  const m = mass(i);
+  vars.p[i] = STIFFNESS * (density - REST_DENSITY) * m;
+  vars.pNear[i] = STIFFNESS_NEAR * nearDensity * m;
 };
 
 const relax = (i, neighbors, dt) => {
@@ -289,17 +304,21 @@ const relax = (i, neighbors, dt) => {
     const n = [vars.pos[j * 3], vars.pos[j * 3 + 1]];
 
     const magnitude = vars.p[i] * g + vars.pNear[i] * g * g;
-    const f = vars.color[i] === vars.color[j] ? 0.95 : 1.05;
+    const f = vars.color[i] === vars.color[j] ? 1 - vars.color[i] * 0.005 : 1;
     const d = multiplyScalar(
       unitApprox(subtract(n, p)),
       magnitude * f * dt * dt
     );
 
-    vars.pos[i * 3] -= d[0] * 0.5;
-    vars.pos[i * 3 + 1] -= d[1] * 0.5;
+    const massI = mass(i);
+    const massJ = mass(j);
+    const mt = massI + massJ;
 
-    vars.pos[j * 3] += d[0] * 0.5;
-    vars.pos[j * 3 + 1] += d[1] * 0.5;
+    vars.pos[i * 3] -= d[0] * (massJ / mt);
+    vars.pos[i * 3 + 1] -= d[1] * (massJ / mt);
+
+    vars.pos[j * 3] += d[0] * (massI / mt);
+    vars.pos[j * 3 + 1] += d[1] * (massI / mt);
   }
 };
 
@@ -358,22 +377,32 @@ const sample = () => {
     for (let j = 0; j < GRID_CELLS; j++) {
       color.setHex(0x000000);
 
-      const sampleDensity = hashMap.query(i, j).length;
-      const sampleColor = hashMap.query(i, j, 0.75).reduce(
-        (result, p) => {
-          result.count++;
-          result.color = result.color.lerp(
-            colors[vars.color[p]],
-            1 / result.count
-          );
-          return result;
-        },
-        { color, count: 0 }
-      ).color;
+      const q = hashMap.query(i, j);
+      const sampleDensity = q.length;
+      const sampleColor = hashMap
+        .query(i, j, 1.5)
+        .concat(q)
+        .reduce(
+          (result, p) => {
+            result.count++;
+            result.color = result.color.lerp(
+              colors[vars.color[p]],
+              1 / result.count
+            );
+            return result;
+          },
+          { color, count: 0 }
+        ).color;
 
-      data[(i + j * GRID_CELLS) * stride] = sampleColor.r * 255;
-      data[(i + j * GRID_CELLS) * stride + 1] = sampleColor.g * 255;
-      data[(i + j * GRID_CELLS) * stride + 2] = sampleColor.b * 255;
+      if (sampleDensity) {
+        data[(i + j * GRID_CELLS) * stride] = sampleColor.r * 255;
+        data[(i + j * GRID_CELLS) * stride + 1] = sampleColor.g * 255;
+        data[(i + j * GRID_CELLS) * stride + 2] = sampleColor.b * 255;
+      } else {
+        data[(i + j * GRID_CELLS) * stride] = 255;
+        data[(i + j * GRID_CELLS) * stride + 1] = 255;
+        data[(i + j * GRID_CELLS) * stride + 2] = 255;
+      }
       data[(i + j * GRID_CELLS) * stride + 3] = sampleDensity;
     }
   }
