@@ -19,12 +19,8 @@ import {
 
 import BlendPointsShader from "./BlendPointsShader";
 
-import EffectComposer from "../../js/EffectComposer";
-import RenderPass from "../../js/RenderPass";
-import ShaderPass from "../../js/ShaderPass";
+import { startRecording, stopRecording, download } from "../../js/utils/record";
 
-import clampNumber from "../../js/clampNumber";
-import mapNumber from "../../js/mapNumber";
 import SpatialHashMap from "../../js/SpatialHashMap";
 import {
   multiplyScalar,
@@ -48,6 +44,7 @@ const PARTICLE_COUNT = 2000;
 const GRID_CELLS = 64;
 const RENDER_POINTS = false;
 const RENDER_PLANE = true;
+const RECORD = false;
 
 const STIFFNESS = 6;
 const STIFFNESS_NEAR = 20;
@@ -56,7 +53,7 @@ const INTERACTION_RADIUS = (viewportHeight / GRID_CELLS) * 2;
 const UNCERTAINTY = INTERACTION_RADIUS;
 const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS;
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2;
-const GRAVITY = [0, -20];
+const GRAVITY = [0, -23];
 const VISCOSITY = 0.01;
 
 console.log({
@@ -90,9 +87,10 @@ const scene = new Scene();
 const camera = new PerspectiveCamera(75, width / height, 0.1, 1000);
 camera.position.z = 30;
 
-const renderer = new WebGLRenderer({ canvas, alpha: true });
+const renderer = new WebGLRenderer({ canvas });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(width, height);
+renderer.setClearColor(new Color(0xffffff));
 
 const boundingArea = {
   w: viewportHeight,
@@ -152,7 +150,7 @@ if (RENDER_PLANE) {
 
 for (let i = 0; i < PARTICLE_COUNT; i++) {
   vars.pos[i * 3] = boundingArea.l + Math.random() * boundingArea.w;
-  vars.pos[i * 3 + 1] = boundingArea.b + Math.random() * boundingArea.h;
+  vars.pos[i * 3 + 1] = boundingArea.b + Math.random() ** 1.5 * boundingArea.h;
   vars.oldX[i] = vars.pos[i * 3];
   vars.oldY[i] = vars.pos[i * 3 + 1];
   vars.vx[i] = 0;
@@ -291,7 +289,7 @@ const relax = (i, neighbors, dt) => {
     const n = [vars.pos[j * 3], vars.pos[j * 3 + 1]];
 
     const magnitude = vars.p[i] * g + vars.pNear[i] * g * g;
-    const f = vars.color[i] === vars.color[j] ? 0.99 : 1.01;
+    const f = vars.color[i] === vars.color[j] ? 0.95 : 1.05;
     const d = multiplyScalar(
       unitApprox(subtract(n, p)),
       magnitude * f * dt * dt
@@ -361,7 +359,7 @@ const sample = () => {
       color.setHex(0x000000);
 
       const sampleDensity = hashMap.query(i, j).length;
-      const sampleColor = hashMap.query(i, j, 1).reduce(
+      const sampleColor = hashMap.query(i, j, 0.75).reduce(
         (result, p) => {
           result.count++;
           result.color = result.color.lerp(
@@ -411,6 +409,7 @@ function loop() {
 
 const start = () => {
   tPrev = performance.now() - 16;
+
   exit();
   loop();
 };
@@ -419,10 +418,18 @@ const exit = () => {
   cancelAnimationFrame(frame);
 };
 
-document.addEventListener(
-  "keyup",
-  e => e.which === 32 && (frame ? exit() : start())
-);
+document.addEventListener("keyup", e => {
+  if (e.which !== 32) return;
+
+  if (frame) {
+    exit();
+    RECORD && stopRecording();
+    RECORD && download();
+  } else {
+    start();
+    RECORD && setTimeout(startRecording, 100);
+  }
+});
 
 window.addEventListener("mousemove", e => {
   const { x, y } = screenToWorldSpace({ x: e.clientX, y: e.clientY });
