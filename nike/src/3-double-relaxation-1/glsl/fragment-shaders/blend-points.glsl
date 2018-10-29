@@ -43,10 +43,10 @@ vec4 textureBicubic(sampler2D sampler, vec2 texCoords, vec2 texSize) {
   vec4 sample3 = texture2D(sampler, offset.yw);
 
   // todo: this is for when enable marching squares
-  sample0 = sample0.w > 0.0 ? sample0 : baseSample;
-  sample1 = sample1.w > 0.0 ? sample1 : baseSample;
-  sample2 = sample2.w > 0.0 ? sample2 : baseSample;
-  sample3 = sample3.w > 0.0 ? sample3 : baseSample;
+  // sample0 = sample0.w > 0.0 ? sample0 : baseSample;
+  // sample1 = sample1.w > 0.0 ? sample1 : baseSample;
+  // sample2 = sample2.w > 0.0 ? sample2 : baseSample;
+  // sample3 = sample3.w > 0.0 ? sample3 : baseSample;
 
   float sx = s.x / (s.x + s.y);
   float sy = s.z / (s.z + s.w);
@@ -62,5 +62,5 @@ void main() {
   // vec4 sample = texture2D(grid, uv);
   vec4 sample = textureBicubic(grid, uv, vec2(horizontalCells, verticalCells));
 
-  gl_FragColor = vec4(sample.xyz, 1.0);
+  gl_FragColor = vec4(sample.xyz, sample.w > 0.0 ? 1.0 : 0.0);
 }

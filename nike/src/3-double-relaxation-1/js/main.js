@@ -42,7 +42,7 @@ const calculateViewportHeight = (perspectiveAngle, distance) => {
 
 const viewportHeight = calculateViewportHeight(75, 30);
 
-const PARTICLE_COUNT = 2000;
+const PARTICLE_COUNT = 2800;
 const GRID_CELLS = 48;
 const RENDER_POINTS = false;
 const RENDER_PLANE = true;
@@ -58,7 +58,12 @@ const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2;
 const GRAVITY = [0, -35];
 const VISCOSITY = 0.01;
 
-const colors = [new Color(0xe3eaed), new Color(0x16e4c0), new Color(0x29257f)];
+const colors = [
+  new Color(0xff164d),
+  new Color(0x2fccff),
+  new Color(0xf4f4f4),
+  new Color(0x230f6d)
+];
 
 console.log({
   UNCERTAINTY,
@@ -120,7 +125,7 @@ const worldYToGridY = y =>
   ((y + boundingArea.h / 2) / boundingArea.h) * GRID_CELLS;
 
 const mass = i => {
-  return 0.7 + vars.color[i] / 5;
+  return 0.85 + vars.color[i] / 10;
 };
 
 const hashMap = new SpatialHashMap(GRID_CELLS, GRID_CELLS);
@@ -165,7 +170,7 @@ for (let i = 0; i < PARTICLE_COUNT; i++) {
   vars.oldY[i] = vars.pos[i * 3 + 1];
   vars.vx[i] = 0;
   vars.vy[i] = 0;
-  vars.color[i] = Math.floor(Math.random() * 3);
+  vars.color[i] = Math.floor(Math.random() * colors.length);
 
   hashMap.add(
     worldXToGridX(vars.pos[i * 3]),
@@ -264,9 +269,6 @@ const applyGlobalForces = (i, dt) => {
   const m = mass(i);
   force = add(force, multiplyScalar(Array.from(GRAVITY), m));
 
-  // f = m * a
-  // a = f / m
-
   if (mouseDown) {
     const fromMouse = subtract([vars.pos[i * 3], vars.pos[i * 3 + 1]], mouse);
     const scalar = Math.min(500, 5000 / lengthSq(fromMouse));
@@ -304,7 +306,7 @@ const relax = (i, neighbors, dt) => {
     const n = [vars.pos[j * 3], vars.pos[j * 3 + 1]];
 
     const magnitude = vars.p[i] * g + vars.pNear[i] * g * g;
-    const f = vars.color[i] === vars.color[j] ? 1 - vars.color[i] * 0.005 : 1;
+    const f = vars.color[i] === vars.color[j] ? 1 - vars.color[i] * 0.05 : 1;
     const d = multiplyScalar(
       unitApprox(subtract(n, p)),
       magnitude * f * dt * dt
@@ -380,7 +382,7 @@ const sample = () => {
       const q = hashMap.query(i, j);
       const sampleDensity = q.length;
       const sampleColor = hashMap
-        .query(i, j, 1.5)
+        .query(i, j, 1.2)
         .concat(q)
         .reduce(
           (result, p) => {
