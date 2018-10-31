@@ -20,6 +20,7 @@ import {
 } from "three";
 
 import BlendPointsShader from "./BlendPointsShader";
+import gradientCircle from "./gradientCircle";
 
 import { startRecording, stopRecording, download } from "../../js/utils/record";
 
@@ -35,6 +36,9 @@ import {
   unitApprox,
   lerp
 } from "../../js/2dVectorOperations";
+import EffectComposer from "../../js/EffectComposer";
+import RenderPass from "../../js/RenderPass";
+import ShaderPass from "../../js/ShaderPass";
 
 const calculateViewportHeight = (perspectiveAngle, distance) => {
   return Math.tan((perspectiveAngle / 2 / 180) * Math.PI) * distance * 2;
@@ -42,10 +46,10 @@ const calculateViewportHeight = (perspectiveAngle, distance) => {
 
 const viewportHeight = calculateViewportHeight(75, 30);
 
-const PARTICLE_COUNT = 2800;
+const PARTICLE_COUNT = 2000;
 const GRID_CELLS = 48;
-const RENDER_POINTS = false;
-const RENDER_PLANE = true;
+const RENDER_POINTS = true;
+const RENDER_PLANE = false;
 const RECORD = false;
 
 const STIFFNESS = 30;
@@ -65,6 +69,8 @@ const colors = [
   new Color(0x230f6d)
 ];
 
+const particleMesh = gradientCircle(INTERACTION_RADIUS, REST_DENSITY);
+
 console.log({
   UNCERTAINTY,
   PARTICLE_COUNT,
@@ -82,8 +88,8 @@ const vars = {
   vy: new Float32Array(PARTICLE_COUNT),
   p: new Float32Array(PARTICLE_COUNT),
   pNear: new Float32Array(PARTICLE_COUNT),
-  color: new Uint8Array(PARTICLE_COUNT)
-  // mesh: []
+  color: new Uint8Array(PARTICLE_COUNT),
+  mesh: []
 };
 
 const canvas = document.querySelector("#canvas");
@@ -98,6 +104,17 @@ const renderer = new WebGLRenderer({ canvas });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(width, height);
 renderer.setClearColor(new Color(0xffffff));
+
+const composer = new EffectComposer(renderer);
+const renderPass = new RenderPass(scene, camera);
+// renderPass.renderToScreen = true;
+composer.addPass(renderPass);
+
+const blendPointsPass = new ShaderPass(BlendPointsShader);
+blendPointsPass.renderToScreen = true;
+blendPointsPass.uniforms.horizontalCells.value = GRID_CELLS;
+blendPointsPass.uniforms.verticalCells.value = GRID_CELLS;
+composer.addPass(blendPointsPass);
 
 const boundingArea = {
   w: viewportHeight,
@@ -143,7 +160,12 @@ const plane = new Mesh(planeGeometry, planeMaterial);
 
 const data = new Uint8Array(4 * GRID_CELLS * GRID_CELLS);
 
-planeMaterial.uniforms.resolution.value.set(
+// planeMaterial.uniforms.resolution.value.set(
+//   canvas.offsetWidth * dpr,
+//   canvas.offsetHeight * dpr
+// );
+
+blendPointsPass.uniforms.resolution.value.set(
   canvas.offsetWidth * dpr,
   canvas.offsetHeight * dpr
 );
@@ -157,7 +179,8 @@ const dataTexture = new DataTexture(
 );
 
 dataTexture.magFilter = LinearFilter;
-planeMaterial.uniforms.grid.value = dataTexture;
+// planeMaterial.uniforms.grid.value = dataTexture;
+blendPointsPass.uniforms.grid.value = dataTexture;
 
 if (RENDER_PLANE) {
   scene.add(plane);
@@ -188,18 +211,23 @@ const colorAttribute = vars.color.reduce((result, color, i) => {
 }, new Float32Array(vars.color.length * 3));
 
 if (RENDER_POINTS) {
-  geometry = new BufferGeometry();
-  geometry.addAttribute("position", new BufferAttribute(vars.pos, 3));
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    const mesh = particleMesh.clone();
+    vars.mesh[i] = mesh;
+    scene.add(mesh);
+  }
+  // geometry = new BufferGeometry();
+  // geometry.addAttribute("position", new BufferAttribute(vars.pos, 3));
 
-  geometry.addAttribute("color", new BufferAttribute(colorAttribute, 3));
+  // geometry.addAttribute("color", new BufferAttribute(colorAttribute, 3));
 
-  const material = new PointsMaterial({
-    size: 0.5,
-    vertexColors: VertexColors
-  });
+  // const material = new PointsMaterial({
+  //   size: 0.5,
+  //   vertexColors: VertexColors
+  // });
 
-  const points = new Points(geometry, material);
-  scene.add(points);
+  // const points = new Points(geometry, material);
+  // scene.add(points);
 }
 
 const simulate = dt => {
@@ -258,8 +286,7 @@ const simulate = dt => {
 
     // Update
     if (RENDER_POINTS) {
-      geometry.attributes.position.needsUpdate = true;
-      geometry.attributes.color.needsUpdate = true;
+      vars.mesh[i].position.set(vars.pos[i * 3], vars.pos[i * 3 + 1], 0);
     }
   }
 };
@@ -268,6 +295,7 @@ const applyGlobalForces = (i, dt) => {
   let force = [0, 0];
   const m = mass(i);
   force = add(force, multiplyScalar(Array.from(GRAVITY), m));
+  force = add(force, [0, -2 * vars.color[i]]);
 
   if (mouseDown) {
     const fromMouse = subtract([vars.pos[i * 3], vars.pos[i * 3 + 1]], mouse);
@@ -306,7 +334,7 @@ const relax = (i, neighbors, dt) => {
     const n = [vars.pos[j * 3], vars.pos[j * 3 + 1]];
 
     const magnitude = vars.p[i] * g + vars.pNear[i] * g * g;
-    const f = vars.color[i] === vars.color[j] ? 1 - vars.color[i] * 0.05 : 1;
+    const f = vars.color[i] === vars.color[j] ? 1 - vars.color[i] * 0.1 : 1;
     const d = multiplyScalar(
       unitApprox(subtract(n, p)),
       magnitude * f * dt * dt
@@ -379,11 +407,11 @@ const sample = () => {
     for (let j = 0; j < GRID_CELLS; j++) {
       color.setHex(0x000000);
 
-      const q = hashMap.query(i, j);
-      const sampleDensity = q.length;
+      // const q = hashMap.query(i, j);
+      // const sampleDensity = q.length;
       const sampleColor = hashMap
-        .query(i, j, 1.2)
-        .concat(q)
+        .query(i, j, 1.5)
+        // .concat(q)
         .reduce(
           (result, p) => {
             result.count++;
@@ -396,30 +424,23 @@ const sample = () => {
           { color, count: 0 }
         ).color;
 
-      if (sampleDensity) {
-        data[(i + j * GRID_CELLS) * stride] = sampleColor.r * 255;
-        data[(i + j * GRID_CELLS) * stride + 1] = sampleColor.g * 255;
-        data[(i + j * GRID_CELLS) * stride + 2] = sampleColor.b * 255;
-      } else {
-        data[(i + j * GRID_CELLS) * stride] = 255;
-        data[(i + j * GRID_CELLS) * stride + 1] = 255;
-        data[(i + j * GRID_CELLS) * stride + 2] = 255;
-      }
-      data[(i + j * GRID_CELLS) * stride + 3] = sampleDensity;
+      data[(i + j * GRID_CELLS) * stride] = sampleColor.r * 255;
+      data[(i + j * GRID_CELLS) * stride + 1] = sampleColor.g * 255;
+      data[(i + j * GRID_CELLS) * stride + 2] = sampleColor.b * 255;
+      // if (sampleDensity) {
+
+      // } else {
+      //   data[(i + j * GRID_CELLS) * stride] = colors[0].r;
+      //   data[(i + j * GRID_CELLS) * stride + 1] = colors[0].g;
+      //   data[(i + j * GRID_CELLS) * stride + 2] = colors[0].b;
+      // }
+      // data[(i + j * GRID_CELLS) * stride + 3] = sampleDensity;
     }
   }
 
-  planeMaterial.uniforms.grid.value.needsUpdate = true;
+  blendPointsPass.uniforms.grid.value.needsUpdate = true;
+  // planeMaterial.uniforms.grid.value.needsUpdate = true;
 };
-
-// const composer = new EffectComposer(renderer);
-// const renderPass = new RenderPass(c);
-// renderPass.renderToScreen = true;
-// composer.addPass(renderPass);
-
-// const blendPointsPass = new ShaderPass(BlendPointsShader);
-// blendPointsPass.renderToScreen = true;
-// composer.addPass(blendPointsPass);
 
 const maxFrameDuration = 1 / 20;
 
@@ -427,7 +448,7 @@ let frame;
 let tPrev;
 
 function loop() {
-  renderer.render(scene, camera);
+  composer.render();
 
   const t = performance.now();
   // simulate(1 / 60);

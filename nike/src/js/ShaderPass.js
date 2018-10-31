@@ -34,6 +34,8 @@ export default class ShaderPass extends Pass {
       });
     }
 
+    this.material.transparent = true;
+
     this.camera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
     this.scene = new Scene();
 

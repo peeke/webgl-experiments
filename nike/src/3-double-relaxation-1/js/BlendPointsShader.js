@@ -7,6 +7,7 @@ const dpr = window.devicePixelRatio;
 
 const BlendPointsShader = {
   uniforms: {
+    tDiffuse: { value: null },
     resolution: {
       value: new Vector2(window.innerWidth * dpr, window.innerHeight * dpr)
     },
