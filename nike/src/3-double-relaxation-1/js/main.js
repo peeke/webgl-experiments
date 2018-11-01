@@ -63,11 +63,9 @@ const GRAVITY = [0, -35];
 const VISCOSITY = 0.01;
 
 const colors = [
-  // new Color(0xf5d70d),
-  // new Color(0x2fccff)
-  new Color(0x272086),
-  new Color(0xffffff),
-  new Color(0x0da6f5)
+  new Color(245, 13, 73),
+  new Color(20, 60, 180),
+  new Color(250, 205, 35)
 ];
 
 const particleMeshes = [
@@ -112,14 +110,14 @@ renderer.setClearColor(new Color(0xffffff));
 
 const composer = new EffectComposer(renderer);
 const renderPass = new RenderPass(scene, camera);
-renderPass.renderToScreen = true;
+// renderPass.renderToScreen = true;
 composer.addPass(renderPass);
 
 const blendPointsPass = new ShaderPass(BlendPointsShader);
-// blendPointsPass.renderToScreen = true;
-// blendPointsPass.uniforms.horizontalCells.value = GRID_CELLS;
-// blendPointsPass.uniforms.verticalCells.value = GRID_CELLS;
-// composer.addPass(blendPointsPass);
+blendPointsPass.renderToScreen = true;
+blendPointsPass.uniforms.horizontalCells.value = GRID_CELLS;
+blendPointsPass.uniforms.verticalCells.value = GRID_CELLS;
+composer.addPass(blendPointsPass);
 
 const boundingArea = {
   w: viewportHeight,
@@ -339,7 +337,7 @@ const relax = (i, neighbors, dt) => {
     const n = [vars.pos[j * 3], vars.pos[j * 3 + 1]];
 
     const magnitude = vars.p[i] * g + vars.pNear[i] * g * g;
-    const f = vars.color[i] === vars.color[j] ? 1 - vars.color[i] * 0.1 : 1;
+    const f = vars.color[i] === vars.color[j] ? 1 - vars.color[i] * 0.05 : 1;
     const d = multiplyScalar(
       unitApprox(subtract(n, p)),
       magnitude * f * dt * dt
