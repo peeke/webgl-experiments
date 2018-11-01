@@ -47,13 +47,13 @@ const calculateViewportHeight = (perspectiveAngle, distance) => {
 const viewportHeight = calculateViewportHeight(75, 30);
 
 const PARTICLE_COUNT = 2000;
-const GRID_CELLS = 48;
+const GRID_CELLS = 54;
 const RENDER_POINTS = true;
 const RENDER_PLANE = false;
 const RECORD = false;
 
-const STIFFNESS = 30;
-const STIFFNESS_NEAR = 20;
+const STIFFNESS = 20;
+const STIFFNESS_NEAR = 30;
 const REST_DENSITY = 6;
 const INTERACTION_RADIUS = (viewportHeight / GRID_CELLS) * 2;
 const UNCERTAINTY = INTERACTION_RADIUS;
@@ -63,10 +63,11 @@ const GRAVITY = [0, -35];
 const VISCOSITY = 0.01;
 
 const colors = [
-  new Color(0xff164d),
-  new Color(0x2fccff),
-  new Color(0xf4f4f4),
-  new Color(0x230f6d)
+  // new Color(0xf5d70d),
+  // new Color(0x2fccff)
+  new Color(0x272086),
+  new Color(0xffffff),
+  new Color(0x0da6f5)
 ];
 
 const particleMesh = gradientCircle(INTERACTION_RADIUS, REST_DENSITY);
@@ -299,7 +300,7 @@ const applyGlobalForces = (i, dt) => {
 
   if (mouseDown) {
     const fromMouse = subtract([vars.pos[i * 3], vars.pos[i * 3 + 1]], mouse);
-    const scalar = Math.min(500, 5000 / lengthSq(fromMouse));
+    const scalar = Math.min(250, 2500 / lengthSq(fromMouse));
     const mouseForce = multiplyScalar(unitApprox(fromMouse), scalar);
     force = add(force, mouseForce);
   }
@@ -414,27 +415,29 @@ const sample = () => {
         // .concat(q)
         .reduce(
           (result, p) => {
-            result.count++;
+            const distanceSq = lengthSq(
+              subtract(
+                [
+                  (boundingArea.w / GRID_CELLS) * i,
+                  (boundingArea.h / GRID_CELLS) * j
+                ],
+                [vars.pos[p * 3], vars.pos[p * 3 + 1]]
+              )
+            );
+            const weight = 1000 / distanceSq;
+            result.weight += weight;
             result.color = result.color.lerp(
               colors[vars.color[p]],
-              1 / result.count
+              weight / result.weight
             );
             return result;
           },
-          { color, count: 0 }
+          { color, weight: 0 }
         ).color;
 
       data[(i + j * GRID_CELLS) * stride] = sampleColor.r * 255;
       data[(i + j * GRID_CELLS) * stride + 1] = sampleColor.g * 255;
       data[(i + j * GRID_CELLS) * stride + 2] = sampleColor.b * 255;
-      // if (sampleDensity) {
-
-      // } else {
-      //   data[(i + j * GRID_CELLS) * stride] = colors[0].r;
-      //   data[(i + j * GRID_CELLS) * stride + 1] = colors[0].g;
-      //   data[(i + j * GRID_CELLS) * stride + 2] = colors[0].b;
-      // }
-      // data[(i + j * GRID_CELLS) * stride + 3] = sampleDensity;
     }
   }
 
