@@ -298,7 +298,7 @@ const applyGlobalForces = (i, dt) => {
   let force = [0, 0];
   const m = mass(i);
   force = add(force, multiplyScalar(Array.from(GRAVITY), m));
-  force = add(force, [0, -2 * vars.color[i]]);
+  force = add(force, [0, -0.25 * vars.color[i]]);
 
   if (mouseDown) {
     const fromMouse = subtract([vars.pos[i * 3], vars.pos[i * 3 + 1]], mouse);

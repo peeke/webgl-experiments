@@ -8,7 +8,7 @@ uniform sampler2D tDiffuse;
 uniform sampler2D grid;
 
 const vec3 COLOR1 = vec3(244.0, 60.0, 108.0) / 255.0;
-const vec3 COLOR2 = vec3(25.0, 236.0, 184.0) / 255.0;
+const vec3 COLOR2 = vec3(60.0, 95.0, 244.0) / 255.0;
 const vec3 COLOR3 = vec3(48.0, 48.0, 163.0) / 255.0;
 
 vec4 cubic(float v) {
@@ -66,8 +66,7 @@ void main() {
     ? COLOR1
     : sil.y > sil.z ? COLOR2 : COLOR3;
 
-  float o = sil.x + sil.y + sil.z / 3.0;
-  bool solid = sil.x <= 0.5 || sil.y <= 0.5 || sil.z <= 0.5;
+  bool o = min(sil.x, min(sil.y, sil.z)) < 0.5;
 
-  gl_FragColor = vec4(color, solid ? 1.0 : 0.0);
+  gl_FragColor = vec4(color, o ? 1.0 : 0.0);
 }
