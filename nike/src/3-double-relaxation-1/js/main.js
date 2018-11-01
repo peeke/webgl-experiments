@@ -70,7 +70,11 @@ const colors = [
   new Color(0x0da6f5)
 ];
 
-const particleMesh = gradientCircle(INTERACTION_RADIUS, REST_DENSITY);
+const particleMeshes = [
+  gradientCircle(INTERACTION_RADIUS, REST_DENSITY, new Color(1, 0, 0)),
+  gradientCircle(INTERACTION_RADIUS, REST_DENSITY, new Color(0, 1, 0)),
+  gradientCircle(INTERACTION_RADIUS, REST_DENSITY, new Color(0, 0, 1))
+];
 
 console.log({
   UNCERTAINTY,
@@ -108,14 +112,14 @@ renderer.setClearColor(new Color(0xffffff));
 
 const composer = new EffectComposer(renderer);
 const renderPass = new RenderPass(scene, camera);
-// renderPass.renderToScreen = true;
+renderPass.renderToScreen = true;
 composer.addPass(renderPass);
 
 const blendPointsPass = new ShaderPass(BlendPointsShader);
-blendPointsPass.renderToScreen = true;
-blendPointsPass.uniforms.horizontalCells.value = GRID_CELLS;
-blendPointsPass.uniforms.verticalCells.value = GRID_CELLS;
-composer.addPass(blendPointsPass);
+// blendPointsPass.renderToScreen = true;
+// blendPointsPass.uniforms.horizontalCells.value = GRID_CELLS;
+// blendPointsPass.uniforms.verticalCells.value = GRID_CELLS;
+// composer.addPass(blendPointsPass);
 
 const boundingArea = {
   w: viewportHeight,
@@ -213,7 +217,7 @@ const colorAttribute = vars.color.reduce((result, color, i) => {
 
 if (RENDER_POINTS) {
   for (let i = 0; i < PARTICLE_COUNT; i++) {
-    const mesh = particleMesh.clone();
+    const mesh = particleMeshes[vars.color[i]].clone();
     vars.mesh[i] = mesh;
     scene.add(mesh);
   }

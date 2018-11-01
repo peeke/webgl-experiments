@@ -6,7 +6,7 @@ import {
   Multiply
 } from "three";
 
-const gradientCircle = (r, restDensity) => {
+const gradientCircle = (r, restDensity, color) => {
   const textureQuality = 4;
   const s = 2 ** textureQuality / 2;
   const circleGeometry = new CircleGeometry(r, 8);
@@ -16,9 +16,19 @@ const gradientCircle = (r, restDensity) => {
   const ctx = canvas.getContext("2d");
 
   const gradient = ctx.createRadialGradient(s, s, 0, s, s, s);
-  gradient.addColorStop(0.1, `rgba(0, 0, 0, 1)`);
-  gradient.addColorStop(0.45, `rgba(0, 0, 0, ${1 / restDensity})`);
-  gradient.addColorStop(0.9, "rgba(0, 0, 0, 0)");
+  gradient.addColorStop(
+    0.025,
+    `rgba(${color.r * 255}, ${color.g * 255}, ${color.b * 255}, 1)`
+  );
+  gradient.addColorStop(
+    0.2,
+    `rgba(${color.r * 255}, ${color.g * 255}, ${color.b * 255}, ${1 /
+      restDensity})`
+  );
+  gradient.addColorStop(
+    0.9,
+    `rgba(${color.r * 255}, ${color.g * 255}, ${color.b * 255}, 0)`
+  );
 
   ctx.arc(s, s, s, 0, 2 * Math.PI);
 
