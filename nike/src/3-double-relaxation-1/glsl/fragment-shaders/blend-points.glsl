@@ -7,9 +7,9 @@ uniform float verticalCells;
 uniform sampler2D tDiffuse;
 uniform sampler2D grid;
 
-const vec3 COLOR1 = vec3(244.0, 60.0, 108.0) / 255.0;
-const vec3 COLOR2 = vec3(60.0, 95.0, 244.0) / 255.0;
-const vec3 COLOR3 = vec3(48.0, 48.0, 163.0) / 255.0;
+const vec3 COLOR2 = vec3(255.0, 245.0, 30.0) / 255.0;
+const vec3 COLOR1 = vec3(255.0, 0.0, 70.0) / 255.0;
+const vec3 COLOR3 = vec3(46.0, 32.0, 103.0) / 255.0;
 
 // vec4 cubic(float v) {
 //   vec4 n = vec4(1.0, 2.0, 3.0, 4.0) - v;
@@ -56,17 +56,55 @@ const vec3 COLOR3 = vec3(48.0, 48.0, 163.0) / 255.0;
 //   );
 // }
 
+float min(float a, float b, float c) {
+  return min(min(a, b), c);
+}
+
+float max(float a, float b, float c) {
+  return max(max(a, b), c);
+}
+
 void main() {
   vec2 uv = gl_FragCoord.xy / resolution.xy;
   vec4 sil = texture2D(tDiffuse, uv);
 
-  vec3 color = sil.x > sil.y && sil.x > sil.z 
-    ? COLOR1
-    : sil.y > sil.z ? COLOR2 : COLOR3;
+  float n1weight = min(sil.x, sil.y, sil.z);
+  vec3 n1color = sil.x == n1weight
+    ? COLOR1 
+    : sil.y == n1weight ? COLOR2 : COLOR3;
 
-  // vec3 color = (COLOR1 * sil.x + COLOR2 * sil.y + COLOR3 * sil.z) / (sil.x + sil.y + sil.z);
+  float n3weight = max(sil.x, sil.y, sil.z);
+  vec3 n3color = sil.x == n3weight
+    ? COLOR1 
+    : sil.y == n3weight ? COLOR2 : COLOR3;
+
+  float n2weight = (sil.x == n1weight && sil.y == n3weight
+    ? sil.z
+    : sil.x == n1weight && sil.z == n3weight
+      ? sil.y
+      : sil.x);
+
+  vec3 n2color = sil.x == n2weight
+    ? COLOR1 
+    : sil.y == n2weight ? COLOR2 : COLOR3;
+
+  n1weight = 1.0 - n1weight;
+  n2weight = 1.0 - n2weight;
+  n3weight = 1.0 - n3weight;
+
+  vec3 color = (
+      n1color * 8.0 + 
+      n2color * max(0.0, pow(1.0 - n1weight + n2weight, 1.0)) +
+      n3color * max(0.0, pow(1.0 - n1weight + n3weight, 1.0)) + 
+      0.0
+    ) / (
+      8.0 +
+      max(0.0, pow(1.0 - n1weight + n2weight, 1.0)) + 
+      max(0.0, pow(1.0 - n1weight + n3weight, 1.0)) + 
+      0.0
+    );
   
-  bool o = min(sil.x, min(sil.y, sil.z)) < 0.5;
+  bool o = min(sil.x, sil.y, sil.z) <= .5;
 
   gl_FragColor = vec4(color, o ? 1.0 : 0.0);
 }

@@ -50,8 +50,8 @@ const GRAVITY = [0, -35];
 const BROWNIAN_MOTION = 0.5;
 
 const colors = [
+  new Color(255, 222, 0),
   new Color(245, 13, 73),
-  new Color(20, 60, 180),
   new Color(250, 205, 35)
 ];
 
@@ -291,7 +291,7 @@ const relax = (i, neighbors, dt) => {
     const n = [vars.pos[j * 3], vars.pos[j * 3 + 1]];
 
     const magnitude = vars.p[i] * g + vars.pNear[i] * g * g;
-    const f = vars.color[i] === vars.color[j] ? 1 - vars.color[i] * 0.1 : 1;
+    const f = vars.color[i] === vars.color[j] ? 1 - vars.color[i] * 0.15 : 1;
     const d = multiplyScalar(
       unitApprox(subtract(n, p)),
       magnitude * f * dt * dt
