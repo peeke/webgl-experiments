@@ -1,22 +1,16 @@
 import {
-  BufferAttribute,
-  BufferGeometry,
-  Points,
   PointLight,
   Scene,
   PerspectiveCamera,
   WebGLRenderer,
-  PointsMaterial,
   PlaneGeometry,
   ShaderMaterial,
   Mesh,
-  VertexColors,
   Color,
   DataTexture,
   RGBAFormat,
   UnsignedByteType,
-  LinearFilter,
-  NearestFilter
+  LinearFilter
 } from "three";
 
 import BlendPointsShader from "./BlendPointsShader";
@@ -25,16 +19,14 @@ import gradientCircle from "./gradientCircle";
 import { startRecording, stopRecording, download } from "../../js/utils/record";
 
 import SpatialHashMap from "../../js/SpatialHashMap";
+import normalRandom from "../../js/normalRandom";
 import {
   multiplyScalar,
-  length,
   lengthSq,
   add,
   subtract,
-  dot,
   unit,
-  unitApprox,
-  lerp
+  unitApprox
 } from "../../js/2dVectorOperations";
 import EffectComposer from "../../js/EffectComposer";
 import RenderPass from "../../js/RenderPass";
@@ -46,21 +38,22 @@ const calculateViewportHeight = (perspectiveAngle, distance) => {
 
 const viewportHeight = calculateViewportHeight(75, 30);
 
-const PARTICLE_COUNT = 2000;
+const PARTICLE_COUNT = 1500;
 const GRID_CELLS = 54;
 const RENDER_POINTS = true;
-const RENDER_PLANE = false;
+const RENDER_PLANE = true;
 const RECORD = false;
 
-const STIFFNESS = 20;
-const STIFFNESS_NEAR = 30;
-const REST_DENSITY = 6;
+const STIFFNESS = 15;
+const STIFFNESS_NEAR = 40;
+const REST_DENSITY = 5;
 const INTERACTION_RADIUS = (viewportHeight / GRID_CELLS) * 2;
 const UNCERTAINTY = INTERACTION_RADIUS;
 const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS;
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2;
 const GRAVITY = [0, -35];
 const VISCOSITY = 0.01;
+const BROWNIAN_MOTION = 0.5;
 
 const colors = [
   new Color(245, 13, 73),
@@ -110,14 +103,16 @@ renderer.setClearColor(new Color(0xffffff));
 
 const composer = new EffectComposer(renderer);
 const renderPass = new RenderPass(scene, camera);
-// renderPass.renderToScreen = true;
+renderPass.renderToScreen = !RENDER_PLANE;
 composer.addPass(renderPass);
 
 const blendPointsPass = new ShaderPass(BlendPointsShader);
-blendPointsPass.renderToScreen = true;
-blendPointsPass.uniforms.horizontalCells.value = GRID_CELLS;
-blendPointsPass.uniforms.verticalCells.value = GRID_CELLS;
-composer.addPass(blendPointsPass);
+if (RENDER_PLANE) {
+  blendPointsPass.renderToScreen = true;
+  blendPointsPass.uniforms.horizontalCells.value = GRID_CELLS;
+  blendPointsPass.uniforms.verticalCells.value = GRID_CELLS;
+  composer.addPass(blendPointsPass);
+}
 
 const boundingArea = {
   w: viewportHeight,
@@ -125,7 +120,9 @@ const boundingArea = {
   l: viewportHeight * -0.5,
   r: viewportHeight * 0.5,
   t: viewportHeight * 0.5,
-  b: viewportHeight * -0.5
+  b: viewportHeight * -0.5,
+  radius: viewportHeight * 0.5,
+  radiusSq: (viewportHeight * 0.5) ** 2
 };
 
 window.boundingArea = boundingArea;
@@ -157,16 +154,7 @@ scene.add(light);
 const mouse = [-1000, -1000];
 let mouseDown = false;
 
-const planeGeometry = new PlaneGeometry(viewportHeight, viewportHeight);
-const planeMaterial = new ShaderMaterial(BlendPointsShader);
-const plane = new Mesh(planeGeometry, planeMaterial);
-
 const data = new Uint8Array(4 * GRID_CELLS * GRID_CELLS);
-
-// planeMaterial.uniforms.resolution.value.set(
-//   canvas.offsetWidth * dpr,
-//   canvas.offsetHeight * dpr
-// );
 
 blendPointsPass.uniforms.resolution.value.set(
   canvas.offsetWidth * dpr,
@@ -182,16 +170,17 @@ const dataTexture = new DataTexture(
 );
 
 dataTexture.magFilter = LinearFilter;
-// planeMaterial.uniforms.grid.value = dataTexture;
 blendPointsPass.uniforms.grid.value = dataTexture;
 
-if (RENDER_PLANE) {
-  scene.add(plane);
-}
-
 for (let i = 0; i < PARTICLE_COUNT; i++) {
-  vars.pos[i * 3] = boundingArea.l + Math.random() * boundingArea.w;
-  vars.pos[i * 3 + 1] = boundingArea.b + Math.random() ** 1.5 * boundingArea.h;
+  vars.pos[i * 3] =
+    Math.cos(Math.random() * 2 * Math.PI) *
+    Math.sqrt(Math.random()) *
+    boundingArea.r;
+  vars.pos[i * 3 + 1] =
+    Math.cos(Math.random() * 2 * Math.PI) *
+    Math.sqrt(Math.random()) *
+    boundingArea.t;
   vars.oldX[i] = vars.pos[i * 3];
   vars.oldY[i] = vars.pos[i * 3 + 1];
   vars.vx[i] = 0;
@@ -337,7 +326,7 @@ const relax = (i, neighbors, dt) => {
     const n = [vars.pos[j * 3], vars.pos[j * 3 + 1]];
 
     const magnitude = vars.p[i] * g + vars.pNear[i] * g * g;
-    const f = vars.color[i] === vars.color[j] ? 1 - vars.color[i] * 0.05 : 1;
+    const f = vars.color[i] === vars.color[j] ? 1 - vars.color[i] * 0.1 : 1;
     const d = multiplyScalar(
       unitApprox(subtract(n, p)),
       magnitude * f * dt * dt
@@ -378,73 +367,29 @@ const gradient = (a, b) => {
 };
 
 const contain = (i, dt) => {
-  const sx = Math.sign(vars.pos[i * 3]);
-  const sy = Math.sign(vars.pos[i * 3 + 1]);
+  let pos = [vars.pos[i * 3], vars.pos[i * 3 + 1]];
 
-  if (vars.pos[i * 3] * sx > boundingArea.r) {
-    const dx = Math.max(0, (Math.random() - 0.5) * UNCERTAINTY * dt);
-    vars.pos[i * 3] = (boundingArea.r - dx) * sx;
-  }
-
-  if (vars.pos[i * 3 + 1] * sy > boundingArea.t) {
-    const dy = Math.max(0, (Math.random() - 0.5) * UNCERTAINTY * dt);
-    vars.pos[i * 3 + 1] = (boundingArea.t - dy) * sy;
+  if (lengthSq(pos) > boundingArea.radiusSq) {
+    pos = multiplyScalar(unit(pos), boundingArea.radius);
+    vars.pos[i * 3] = pos[0];
+    vars.pos[i * 3 + 1] = pos[1];
   }
 };
 
 const calculateVelocity = (i, dt) => {
-  const p = [vars.pos[i * 3], vars.pos[i * 3 + 1]];
+  const pos = [vars.pos[i * 3], vars.pos[i * 3 + 1]];
   const old = [vars.oldX[i], vars.oldY[i]];
 
-  const v = multiplyScalar(subtract(p, old), 1 / dt);
+  const dtSqrt = Math.sqrt(dt);
+  const p = vars.pNear[i] / REST_DENSITY ** 3;
+
+  old[0] += normalRandom(0, dtSqrt * p) * BROWNIAN_MOTION;
+  old[1] += normalRandom(0, dtSqrt * p) * BROWNIAN_MOTION;
+
+  const v = multiplyScalar(subtract(pos, old), 1 / dt);
 
   vars.vx[i] = v[0];
   vars.vy[i] = v[1];
-};
-
-const sample = () => {
-  const stride = 4;
-  const color = new Color(0x000000);
-
-  for (let i = 0; i < GRID_CELLS; i++) {
-    for (let j = 0; j < GRID_CELLS; j++) {
-      color.setHex(0x000000);
-
-      // const q = hashMap.query(i, j);
-      // const sampleDensity = q.length;
-      const sampleColor = hashMap
-        .query(i, j, 1.5)
-        // .concat(q)
-        .reduce(
-          (result, p) => {
-            const distanceSq = lengthSq(
-              subtract(
-                [
-                  (boundingArea.w / GRID_CELLS) * i,
-                  (boundingArea.h / GRID_CELLS) * j
-                ],
-                [vars.pos[p * 3], vars.pos[p * 3 + 1]]
-              )
-            );
-            const weight = 1000 / distanceSq;
-            result.weight += weight;
-            result.color = result.color.lerp(
-              colors[vars.color[p]],
-              weight / result.weight
-            );
-            return result;
-          },
-          { color, weight: 0 }
-        ).color;
-
-      data[(i + j * GRID_CELLS) * stride] = sampleColor.r * 255;
-      data[(i + j * GRID_CELLS) * stride + 1] = sampleColor.g * 255;
-      data[(i + j * GRID_CELLS) * stride + 2] = sampleColor.b * 255;
-    }
-  }
-
-  blendPointsPass.uniforms.grid.value.needsUpdate = true;
-  // planeMaterial.uniforms.grid.value.needsUpdate = true;
 };
 
 const maxFrameDuration = 1 / 20;
@@ -458,7 +403,7 @@ function loop() {
   const t = performance.now();
   // simulate(1 / 60);
   simulate(Math.min((t - tPrev) / 1000, maxFrameDuration));
-  sample();
+  // sample();
   tPrev = t;
 
   frame = requestAnimationFrame(loop);
@@ -468,6 +413,8 @@ const start = () => {
   tPrev = performance.now() - 16;
 
   exit();
+
+  simulate(0.0001);
   loop();
 };
 
