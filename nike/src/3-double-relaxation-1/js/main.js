@@ -3,9 +3,6 @@ import {
   Scene,
   PerspectiveCamera,
   WebGLRenderer,
-  PlaneGeometry,
-  ShaderMaterial,
-  Mesh,
   Color,
   DataTexture,
   RGBAFormat,
@@ -40,7 +37,6 @@ const viewportHeight = calculateViewportHeight(75, 30);
 
 const PARTICLE_COUNT = 1500;
 const GRID_CELLS = 54;
-const RENDER_POINTS = true;
 const RENDER_PLANE = true;
 const RECORD = false;
 
@@ -48,11 +44,9 @@ const STIFFNESS = 15;
 const STIFFNESS_NEAR = 40;
 const REST_DENSITY = 5;
 const INTERACTION_RADIUS = (viewportHeight / GRID_CELLS) * 2;
-const UNCERTAINTY = INTERACTION_RADIUS;
 const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS;
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2;
 const GRAVITY = [0, -35];
-const VISCOSITY = 0.01;
 const BROWNIAN_MOTION = 0.5;
 
 const colors = [
@@ -66,15 +60,6 @@ const particleMeshes = [
   gradientCircle(INTERACTION_RADIUS, REST_DENSITY, new Color(0, 1, 0)),
   gradientCircle(INTERACTION_RADIUS, REST_DENSITY, new Color(0, 0, 1))
 ];
-
-console.log({
-  UNCERTAINTY,
-  PARTICLE_COUNT,
-  REST_DENSITY,
-  INTERACTION_RADIUS,
-  GRAVITY,
-  VISCOSITY
-});
 
 const vars = {
   pos: new Float32Array(PARTICLE_COUNT * 3),
@@ -194,48 +179,27 @@ for (let i = 0; i < PARTICLE_COUNT; i++) {
   );
 }
 
-let geometry;
-const colorAttribute = vars.color.reduce((result, color, i) => {
-  result[i * 3] = colors[color].r;
-  result[i * 3 + 1] = colors[color].g;
-  result[i * 3 + 2] = colors[color].b;
-  return result;
-}, new Float32Array(vars.color.length * 3));
-
-if (RENDER_POINTS) {
-  for (let i = 0; i < PARTICLE_COUNT; i++) {
-    const mesh = particleMeshes[vars.color[i]].clone();
-    vars.mesh[i] = mesh;
-    scene.add(mesh);
-  }
-  // geometry = new BufferGeometry();
-  // geometry.addAttribute("position", new BufferAttribute(vars.pos, 3));
-
-  // geometry.addAttribute("color", new BufferAttribute(colorAttribute, 3));
-
-  // const material = new PointsMaterial({
-  //   size: 0.5,
-  //   vertexColors: VertexColors
-  // });
-
-  // const points = new Points(geometry, material);
-  // scene.add(points);
+for (let i = 0; i < PARTICLE_COUNT; i++) {
+  const mesh = particleMeshes[vars.color[i]].clone();
+  vars.mesh[i] = mesh;
+  scene.add(mesh);
 }
 
 const simulate = dt => {
   hashMap.clear();
 
   for (let i = 0; i < PARTICLE_COUNT; i++) {
+    // Update old position
     vars.oldX[i] = vars.pos[i * 3];
     vars.oldY[i] = vars.pos[i * 3 + 1];
 
     applyGlobalForces(i, dt);
 
+    // Update positions
     vars.pos[i * 3] += vars.vx[i] * dt;
     vars.pos[i * 3 + 1] += vars.vy[i] * dt;
 
-    contain(i, dt);
-
+    // Update hashmap
     hashMap.add(
       worldXToGridX(vars.pos[i * 3]),
       worldYToGridY(vars.pos[i * 3 + 1]),
@@ -244,42 +208,23 @@ const simulate = dt => {
   }
 
   for (let i = 0; i < PARTICLE_COUNT; i++) {
-    const results = hashMap.query(
-      worldXToGridX(vars.pos[i * 3]),
-      worldYToGridY(vars.pos[i * 3 + 1]),
-      (INTERACTION_RADIUS / boundingArea.w) * GRID_CELLS * 2
-    );
-    let neighbors = [];
-
-    for (let k = 0; k < results.length; k++) {
-      const j = results[k];
-      if (i === j) continue;
-      const g = particleGradient(i, j);
-      if (!g) continue;
-      neighbors.push([j, g]);
-    }
+    const neighbors = getNeighborsWithGradients(i);
 
     updateDensities(i, neighbors);
 
     // perform double density relaxation
     relax(i, neighbors, dt);
-
-    contain(i, dt);
-
-    for (let k = 0; k < results.length; k++) {
-      const j = results[k];
-      contain(j, dt);
-    }
   }
 
   for (let i = 0; i < PARTICLE_COUNT; i++) {
+    // Constrain the particles to a container
+    contain(i, dt);
+
     // Calculate new velocities
     calculateVelocity(i, dt);
 
     // Update
-    if (RENDER_POINTS) {
-      vars.mesh[i].position.set(vars.pos[i * 3], vars.pos[i * 3 + 1], 0);
-    }
+    vars.mesh[i].position.set(vars.pos[i * 3], vars.pos[i * 3 + 1], 0);
   }
 };
 
@@ -300,6 +245,26 @@ const applyGlobalForces = (i, dt) => {
 
   vars.vx[i] += dv[0];
   vars.vy[i] += dv[1];
+};
+
+const getNeighborsWithGradients = i => {
+  const results = hashMap.query(
+    worldXToGridX(vars.pos[i * 3]),
+    worldYToGridY(vars.pos[i * 3 + 1]),
+    (INTERACTION_RADIUS / boundingArea.w) * GRID_CELLS * 2
+  );
+
+  let neighbors = [];
+
+  for (let k = 0; k < results.length; k++) {
+    const j = results[k];
+    if (i === j) continue;
+    const g = particleGradient(i, j);
+    if (!g) continue;
+    neighbors.push([j, g]);
+  }
+
+  return neighbors;
 };
 
 const updateDensities = (i, neighbors) => {
@@ -366,7 +331,7 @@ const gradient = (a, b) => {
   return g;
 };
 
-const contain = (i, dt) => {
+const contain = i => {
   let pos = [vars.pos[i * 3], vars.pos[i * 3 + 1]];
 
   if (lengthSq(pos) > boundingArea.radiusSq) {
@@ -401,9 +366,7 @@ function loop() {
   composer.render();
 
   const t = performance.now();
-  // simulate(1 / 60);
   simulate(Math.min((t - tPrev) / 1000, maxFrameDuration));
-  // sample();
   tPrev = t;
 
   frame = requestAnimationFrame(loop);
@@ -439,10 +402,6 @@ window.addEventListener("mousemove", e => {
   const { x, y } = screenToWorldSpace({ x: e.clientX, y: e.clientY });
   mouse[0] = x;
   mouse[1] = y;
-
-  // const mouseNeighbors = hashMap.query(worldXToGridX(x), worldXToGridX(y))
-  // const p = mouseNeighbors.reduce((result, i) => result + vars.pNear[i], 0) / mouseNeighbors.length
-  // console.log(p)
 });
 
 window.addEventListener("mousedown", () => (mouseDown = true));

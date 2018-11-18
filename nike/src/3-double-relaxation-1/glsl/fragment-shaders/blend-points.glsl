@@ -58,14 +58,14 @@ const vec3 COLOR3 = vec3(48.0, 48.0, 163.0) / 255.0;
 
 void main() {
   vec2 uv = gl_FragCoord.xy / resolution.xy;
-  // vec4 sample = texture2D(grid, uv);
-  // vec4 sample = textureBicubic(grid, uv, vec2(horizontalCells, verticalCells));
   vec4 sil = texture2D(tDiffuse, uv);
 
   vec3 color = sil.x > sil.y && sil.x > sil.z 
     ? COLOR1
     : sil.y > sil.z ? COLOR2 : COLOR3;
 
+  // vec3 color = (COLOR1 * sil.x + COLOR2 * sil.y + COLOR3 * sil.z) / (sil.x + sil.y + sil.z);
+  
   bool o = min(sil.x, min(sil.y, sil.z)) < 0.5;
 
   gl_FragColor = vec4(color, o ? 1.0 : 0.0);
