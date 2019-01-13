@@ -1,3 +1,13 @@
+/**
+ * Hello kind reader. If you're coming from 'Simulating blobs of fluid',
+ * be advised that this visual is a bit more elaborate than described in
+ * the article. Mass is taken into account, there are multiple colors for
+ * a particle and the way the final pass is colored is also different.
+ *
+ * Most of the mechanics are the same though! Feel free to post ask
+ * any questions you may have on Twitter, @peeke__
+ */
+
 import {
   PointLight,
   Scene,
@@ -35,19 +45,19 @@ const calculateViewportHeight = (perspectiveAngle, distance) => {
 
 const viewportHeight = calculateViewportHeight(75, 30);
 
-const PARTICLE_COUNT = 1500;
+const PARTICLE_COUNT = 1200;
 const GRID_CELLS = 54;
 const RENDER_PLANE = true;
 const RECORD = false;
 
-const STIFFNESS = 15;
-const STIFFNESS_NEAR = 40;
-const REST_DENSITY = 5;
-const INTERACTION_RADIUS = (viewportHeight / GRID_CELLS) * 2;
+const STIFFNESS = 20;
+const STIFFNESS_NEAR = 100;
+const REST_DENSITY = 6;
+const INTERACTION_RADIUS = (viewportHeight / GRID_CELLS) * 2.5;
 const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS;
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2;
 const GRAVITY = [0, -35];
-const BROWNIAN_MOTION = 0.5;
+const BROWNIAN_MOTION = 0.33;
 
 const colors = [
   new Color(255, 222, 0),
@@ -61,16 +71,19 @@ const particleMeshes = [
   gradientCircle(INTERACTION_RADIUS, REST_DENSITY, new Color(0, 0, 1))
 ];
 
-const vars = {
-  pos: new Float32Array(PARTICLE_COUNT * 3),
+const state = {
+  x: new Float32Array(PARTICLE_COUNT),
+  y: new Float32Array(PARTICLE_COUNT),
   oldX: new Float32Array(PARTICLE_COUNT),
   oldY: new Float32Array(PARTICLE_COUNT),
   vx: new Float32Array(PARTICLE_COUNT),
   vy: new Float32Array(PARTICLE_COUNT),
   p: new Float32Array(PARTICLE_COUNT),
   pNear: new Float32Array(PARTICLE_COUNT),
+  g: new Float32Array(PARTICLE_COUNT),
   color: new Uint8Array(PARTICLE_COUNT),
-  mesh: []
+  mesh: [],
+  neighbors: []
 };
 
 const canvas = document.querySelector("#canvas");
@@ -102,12 +115,12 @@ if (RENDER_PLANE) {
 const boundingArea = {
   w: viewportHeight,
   h: viewportHeight,
-  l: viewportHeight * -0.5,
-  r: viewportHeight * 0.5,
-  t: viewportHeight * 0.5,
-  b: viewportHeight * -0.5,
-  radius: viewportHeight * 0.5,
-  radiusSq: (viewportHeight * 0.5) ** 2
+  l: viewportHeight * -0.475,
+  r: viewportHeight * 0.475,
+  t: viewportHeight * 0.475,
+  b: viewportHeight * -0.475,
+  radius: viewportHeight * 0.475,
+  radiusSq: (viewportHeight * 0.475) ** 2
 };
 
 window.boundingArea = boundingArea;
@@ -121,13 +134,10 @@ const screenToWorldSpace = ({ x, y }) => ({
     -boundingArea.h
 });
 
-const worldXToGridX = x =>
-  ((x + boundingArea.w / 2) / boundingArea.w) * GRID_CELLS;
-const worldYToGridY = y =>
-  ((y + boundingArea.h / 2) / boundingArea.h) * GRID_CELLS;
+const worldToGrid = v => (v / boundingArea.w + 0.5) * GRID_CELLS;
 
 const mass = i => {
-  return 0.85 + vars.color[i] / 10;
+  return 0.85 + state.color[i] / 10;
 };
 
 const hashMap = new SpatialHashMap(GRID_CELLS, GRID_CELLS);
@@ -136,7 +146,7 @@ const light = new PointLight(0xffffff, 1, 100);
 light.position.set(20, 10, 30);
 scene.add(light);
 
-const mouse = [-1000, -1000];
+const mouse = [0, 0];
 let mouseDown = false;
 
 const data = new Uint8Array(4 * GRID_CELLS * GRID_CELLS);
@@ -158,30 +168,26 @@ dataTexture.magFilter = LinearFilter;
 blendPointsPass.uniforms.grid.value = dataTexture;
 
 for (let i = 0; i < PARTICLE_COUNT; i++) {
-  vars.pos[i * 3] =
+  state.x[i] =
     Math.cos(Math.random() * 2 * Math.PI) *
     Math.sqrt(Math.random()) *
     boundingArea.r;
-  vars.pos[i * 3 + 1] =
+  state.y[i] =
     Math.cos(Math.random() * 2 * Math.PI) *
     Math.sqrt(Math.random()) *
     boundingArea.t;
-  vars.oldX[i] = vars.pos[i * 3];
-  vars.oldY[i] = vars.pos[i * 3 + 1];
-  vars.vx[i] = 0;
-  vars.vy[i] = 0;
-  vars.color[i] = Math.floor(Math.random() * colors.length);
+  state.oldX[i] = state.x[i];
+  state.oldY[i] = state.y[i];
+  state.vx[i] = 0;
+  state.vy[i] = 0;
+  state.color[i] = Math.floor(Math.random() * colors.length);
 
-  hashMap.add(
-    worldXToGridX(vars.pos[i * 3]),
-    worldYToGridY(vars.pos[i * 3 + 1]),
-    i
-  );
+  hashMap.add(worldToGrid(state.x[i]), worldToGrid(state.y[i]), i);
 }
 
 for (let i = 0; i < PARTICLE_COUNT; i++) {
-  const mesh = particleMeshes[vars.color[i]].clone();
-  vars.mesh[i] = mesh;
+  const mesh = particleMeshes[state.color[i]].clone();
+  state.mesh[i] = mesh;
   scene.add(mesh);
 }
 
@@ -190,27 +196,23 @@ const simulate = dt => {
 
   for (let i = 0; i < PARTICLE_COUNT; i++) {
     // Update old position
-    vars.oldX[i] = vars.pos[i * 3];
-    vars.oldY[i] = vars.pos[i * 3 + 1];
+    state.oldX[i] = state.x[i];
+    state.oldY[i] = state.y[i];
 
     applyGlobalForces(i, dt);
 
     // Update positions
-    vars.pos[i * 3] += vars.vx[i] * dt;
-    vars.pos[i * 3 + 1] += vars.vy[i] * dt;
+    state.x[i] += state.vx[i] * dt;
+    state.y[i] += state.vy[i] * dt;
 
     // Update hashmap
-    hashMap.add(
-      worldXToGridX(vars.pos[i * 3]),
-      worldYToGridY(vars.pos[i * 3 + 1]),
-      i
-    );
+    hashMap.add(worldToGrid(state.x[i]), worldToGrid(state.y[i]), i);
   }
 
   for (let i = 0; i < PARTICLE_COUNT; i++) {
     const neighbors = getNeighborsWithGradients(i);
 
-    updateDensities(i, neighbors);
+    updatePressure(i, neighbors);
 
     // perform double density relaxation
     relax(i, neighbors, dt);
@@ -224,105 +226,106 @@ const simulate = dt => {
     calculateVelocity(i, dt);
 
     // Update
-    vars.mesh[i].position.set(vars.pos[i * 3], vars.pos[i * 3 + 1], 0);
+    state.mesh[i].position.set(state.x[i], state.y[i], 0);
   }
 };
 
 const applyGlobalForces = (i, dt) => {
   let force = [0, 0];
-  const m = mass(i);
-  force = add(force, multiplyScalar(Array.from(GRAVITY), m));
-  force = add(force, [0, -0.25 * vars.color[i]]);
+  force = add(force, Array.from(GRAVITY));
+  force = add(force, [0, -0.25 * state.color[i]]);
 
   if (mouseDown) {
-    const fromMouse = subtract([vars.pos[i * 3], vars.pos[i * 3 + 1]], mouse);
+    const fromMouse = subtract([state.x[i], state.y[i]], mouse);
     const scalar = Math.min(250, 2500 / lengthSq(fromMouse));
     const mouseForce = multiplyScalar(unitApprox(fromMouse), scalar);
     force = add(force, mouseForce);
   }
 
-  const dv = multiplyScalar(force, dt / m);
+  // f = m * a --> a = f / m
+  // v += a * dt --> v += f * dt / m
 
-  vars.vx[i] += dv[0];
-  vars.vy[i] += dv[1];
+  const m = mass(i);
+  state.vx[i] += (force[0] * dt) / m;
+  state.vy[i] += (force[1] * dt) / m;
 };
 
 const getNeighborsWithGradients = i => {
   const results = hashMap.query(
-    worldXToGridX(vars.pos[i * 3]),
-    worldYToGridY(vars.pos[i * 3 + 1]),
+    worldToGrid(state.x[i]),
+    worldToGrid(state.y[i]),
     (INTERACTION_RADIUS / boundingArea.w) * GRID_CELLS * 2
   );
 
-  let neighbors = [];
+  const neighbors = [];
 
   for (let k = 0; k < results.length; k++) {
-    const j = results[k];
-    if (i === j) continue;
-    const g = particleGradient(i, j);
+    const n = results[k];
+    if (i === n) continue;
+
+    const g = gradient(i, n);
     if (!g) continue;
-    neighbors.push([j, g]);
+
+    state.g[n] = g;
+    neighbors.push(n);
   }
 
   return neighbors;
 };
 
-const updateDensities = (i, neighbors) => {
+const updatePressure = (i, neighbors) => {
   let density = 0;
   let nearDensity = 0;
 
   for (let k = 0; k < neighbors.length; k++) {
-    const g = neighbors[k][1];
+    const g = state.g[neighbors[k]];
     const m = mass(i);
     density += g * g * m;
     nearDensity += g * g * g * m;
   }
 
   const m = mass(i);
-  vars.p[i] = STIFFNESS * (density - REST_DENSITY) * m;
-  vars.pNear[i] = STIFFNESS_NEAR * nearDensity * m;
+  state.p[i] = STIFFNESS * (density - REST_DENSITY) * m;
+  state.pNear[i] = STIFFNESS_NEAR * nearDensity * m;
 };
 
 const relax = (i, neighbors, dt) => {
-  const p = [vars.pos[i * 3], vars.pos[i * 3 + 1]];
-  for (let k = 0; k < neighbors.length; k++) {
-    const j = neighbors[k][0];
-    const g = neighbors[k][1];
-    const n = [vars.pos[j * 3], vars.pos[j * 3 + 1]];
+  const pos = [state.x[i], state.y[i]];
 
-    const magnitude = vars.p[i] * g + vars.pNear[i] * g * g;
-    const f = vars.color[i] === vars.color[j] ? 1 - vars.color[i] * 0.15 : 1;
+  for (let k = 0; k < neighbors.length; k++) {
+    const n = neighbors[k];
+    const g = state.g[n];
+    const nPos = [state.x[n], state.y[n]];
+
+    const magnitude = state.p[i] * g + state.pNear[i] * g * g;
+    const f = state.color[i] === state.color[n] ? 1 - state.color[i] * 0.15 : 1;
     const d = multiplyScalar(
-      unitApprox(subtract(n, p)),
+      unitApprox(subtract(nPos, pos)),
       magnitude * f * dt * dt
     );
 
     const massI = mass(i);
-    const massJ = mass(j);
+    const massJ = mass(n);
     const mt = massI + massJ;
 
-    vars.pos[i * 3] -= d[0] * (massJ / mt);
-    vars.pos[i * 3 + 1] -= d[1] * (massJ / mt);
+    state.x[i] -= d[0] * (massJ / mt);
+    state.y[i] -= d[1] * (massJ / mt);
 
-    vars.pos[j * 3] += d[0] * (massI / mt);
-    vars.pos[j * 3 + 1] += d[1] * (massI / mt);
+    state.x[n] += d[0] * (massI / mt);
+    state.y[n] += d[1] * (massI / mt);
   }
 };
 
-const particleGradient = (i, j) => {
-  return gradient(
-    [vars.pos[i * 3], vars.pos[i * 3 + 1]],
-    [vars.pos[j * 3], vars.pos[j * 3 + 1]]
-  );
-};
+const gradientCache = new Float32Array(Math.ceil(INTERACTION_RADIUS_SQ * 5));
 
-const gradientCache = new Float32Array(Math.ceil(INTERACTION_RADIUS_SQ * 10));
+const gradient = (i, n) => {
+  const a = [state.x[i], state.y[i]];
+  const b = [state.x[n], state.y[n]];
 
-const gradient = (a, b) => {
   const lsq = lengthSq(subtract(a, b));
   if (lsq > INTERACTION_RADIUS_SQ) return 0;
 
-  const cacheIndex = (lsq * 10) | 0;
+  const cacheIndex = (lsq * 5) | 0;
   if (gradientCache[cacheIndex]) return gradientCache[cacheIndex];
 
   const g = Math.max(0, 1 - Math.sqrt(lsq) * INTERACTION_RADIUS_INV);
@@ -332,29 +335,29 @@ const gradient = (a, b) => {
 };
 
 const contain = i => {
-  let pos = [vars.pos[i * 3], vars.pos[i * 3 + 1]];
+  let pos = [state.x[i], state.y[i]];
 
   if (lengthSq(pos) > boundingArea.radiusSq) {
     pos = multiplyScalar(unit(pos), boundingArea.radius);
-    vars.pos[i * 3] = pos[0];
-    vars.pos[i * 3 + 1] = pos[1];
+    state.x[i] = pos[0];
+    state.y[i] = pos[1];
   }
 };
 
 const calculateVelocity = (i, dt) => {
-  const pos = [vars.pos[i * 3], vars.pos[i * 3 + 1]];
-  const old = [vars.oldX[i], vars.oldY[i]];
+  const pos = [state.x[i], state.y[i]];
+  const old = [state.oldX[i], state.oldY[i]];
 
   const dtSqrt = Math.sqrt(dt);
-  const p = vars.pNear[i] / REST_DENSITY ** 3;
+  const dampen = 1 - 1 / Math.max(1, state.pNear[i]);
 
-  old[0] += normalRandom(0, dtSqrt * p) * BROWNIAN_MOTION;
-  old[1] += normalRandom(0, dtSqrt * p) * BROWNIAN_MOTION;
+  old[0] += normalRandom(0, dtSqrt) * BROWNIAN_MOTION * dampen;
+  old[1] += normalRandom(0, dtSqrt) * BROWNIAN_MOTION * dampen;
 
   const v = multiplyScalar(subtract(pos, old), 1 / dt);
 
-  vars.vx[i] = v[0];
-  vars.vy[i] = v[1];
+  state.vx[i] = v[0];
+  state.vy[i] = v[1];
 };
 
 const maxFrameDuration = 1 / 20;

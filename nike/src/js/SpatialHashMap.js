@@ -4,14 +4,12 @@ class SpatialHashMap {
     this.height = height;
 
     this.grid = new Array(width * height).fill(null).map(() => []);
-    this.cache = {};
   }
 
   clear() {
     this.grid.forEach(cell => {
       cell.splice(0);
     });
-    this.cache = {};
   }
 
   add(x, y, data) {
@@ -59,9 +57,6 @@ class SpatialHashMap {
   }
 
   queryWithRadius(x, y, radius) {
-    // x = Math.round(x);
-    // y = Math.round(y);
-
     const left = Math.max(Math.round(x - radius), 0);
     const right = Math.min(Math.round(x + radius), this.width - 1);
     const bottom = Math.max(Math.round(y - radius), 0);

@@ -64,34 +64,47 @@ float max(float a, float b, float c) {
   return max(max(a, b), c);
 }
 
-vec4 sample(vec2 uv) {
-  vec4 sil = texture2D(tDiffuse, uv);
-  
-  float weight = min(sil.x, sil.y, sil.z);
-  vec3 color = sil.x == weight
-    ? COLOR1 
-    : sil.y == weight ? COLOR2 : COLOR3;
-  
-  bool o = min(sil.x, sil.y, sil.z) <= .5;
-  
-  return vec4(color, o ? 1.0 : 0.0);
-}
-
 void main() {
   vec2 uv = gl_FragCoord.xy / resolution.xy;
-  vec2 step = vec2(1.0) / resolution.xy;
+  vec4 sil = texture2D(tDiffuse, uv);
+
+  float n1weight = min(sil.x, sil.y, sil.z);
+  vec3 n1color = sil.x == n1weight
+    ? COLOR1 
+    : sil.y == n1weight ? COLOR2 : COLOR3;
+
+  float n3weight = max(sil.x, sil.y, sil.z);
+  vec3 n3color = sil.x == n3weight
+    ? COLOR1 
+    : sil.y == n3weight ? COLOR2 : COLOR3;
+
+  float n2weight = (sil.x == n1weight && sil.y == n3weight
+    ? sil.z
+    : sil.x == n1weight && sil.z == n3weight
+      ? sil.y
+      : sil.x);
+
+  vec3 n2color = sil.x == n2weight
+    ? COLOR1 
+    : sil.y == n2weight ? COLOR2 : COLOR3;
+
+  n1weight = 1.0 - n1weight;
+  n2weight = 1.0 - n2weight;
+  n3weight = 1.0 - n3weight;
+
+  vec3 color = (
+      n1color * 8.0 + 
+      n2color * max(0.0, pow(1.0 - n1weight + n2weight, 1.0)) +
+      n3color * max(0.0, pow(1.0 - n1weight + n3weight, 1.0)) + 
+      0.0
+    ) / (
+      8.0 +
+      max(0.0, pow(1.0 - n1weight + n2weight, 1.0)) + 
+      max(0.0, pow(1.0 - n1weight + n3weight, 1.0)) + 
+      0.0
+    );
   
-  vec4 color = sample(uv);
+  bool o = min(sil.x, sil.y, sil.z) <= .5;
 
-  // vec4 colorN = sample(vec2(uv.x, uv.y + 5.0));
-  // if (colorN.w != 0.0) {
-  //   color = color * .8 + colorN * .2;
-  // }
-
-  // vec4 colorS = sample(vec2(uv.x, uv.y - 5.0));
-  // if (colorS.w != 0.0) {
-  //   color = color * .8 + colorS * .2;
-  // }
-
-  gl_FragColor = color;
+  gl_FragColor = vec4(color, o ? 1.0 : 0.0);
 }
