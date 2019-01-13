@@ -57,7 +57,7 @@ const INTERACTION_RADIUS = (viewportHeight / GRID_CELLS) * 2.5;
 const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS;
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2;
 const GRAVITY = [0, -35];
-const BROWNIAN_MOTION = 0.33;
+const BROWNIAN_MOTION = 0.5;
 
 const colors = [
   new Color(255, 222, 0),
@@ -345,14 +345,18 @@ const contain = i => {
 };
 
 const calculateVelocity = (i, dt) => {
-  const pos = [state.x[i], state.y[i]];
+  let pos = [state.x[i], state.y[i]];
   const old = [state.oldX[i], state.oldY[i]];
 
   const dtSqrt = Math.sqrt(dt);
-  const dampen = 1 - 1 / Math.max(1, state.pNear[i]);
 
-  old[0] += normalRandom(0, dtSqrt) * BROWNIAN_MOTION * dampen;
-  old[1] += normalRandom(0, dtSqrt) * BROWNIAN_MOTION * dampen;
+  const dx = normalRandom(0, dtSqrt) * BROWNIAN_MOTION;
+  const dy = normalRandom(0, dtSqrt) * BROWNIAN_MOTION;
+
+  if (lengthSq(add([dx, dy], pos)) > boundingArea.radiusSq) {
+    pos[0] -= dx;
+    pos[1] -= dy;
+  }
 
   const v = multiplyScalar(subtract(pos, old), 1 / dt);
 
