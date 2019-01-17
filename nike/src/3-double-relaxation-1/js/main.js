@@ -51,7 +51,7 @@ const RENDER_PLANE = true;
 const RECORD = false;
 
 const STIFFNESS = 20;
-const STIFFNESS_NEAR = 70;
+const STIFFNESS_NEAR = 100;
 const REST_DENSITY = 5;
 const INTERACTION_RADIUS = (viewportHeight / GRID_CELLS) * 2.5;
 const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS;
@@ -94,10 +94,10 @@ const scene = new Scene();
 const camera = new PerspectiveCamera(75, width / height, 0.1, 1000);
 camera.position.z = 30;
 
-const renderer = new WebGLRenderer({ canvas });
+const renderer = new WebGLRenderer({ canvas, alpha: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(width, height);
-renderer.setClearColor(new Color(0xffffff));
+// renderer.setClearColor(new Color(0x000000));
 
 const composer = new EffectComposer(renderer);
 const renderPass = new RenderPass(scene, camera);
@@ -235,12 +235,12 @@ const applyGlobalForces = (i, dt) => {
   force = add(force, Array.from(GRAVITY));
   force = add(force, [0, -0.25 * state.color[i]]);
 
-  if (mouseDown) {
+  // if (mouseDown) {
     const fromMouse = subtract([state.x[i], state.y[i]], mouse);
-    const scalar = Math.min(250, 2500 / lengthSq(fromMouse));
+    const scalar = Math.min(350, 2700 / lengthSq(fromMouse));
     const mouseForce = multiplyScalar(unitApprox(fromMouse), scalar);
     force = add(force, mouseForce);
-  }
+  // }
 
   // f = m * a --> a = f / m
   // v += a * dt --> v += f * dt / m
@@ -298,7 +298,7 @@ const relax = (i, neighbors, dt) => {
     const nPos = [state.x[n], state.y[n]];
 
     const magnitude = state.p[i] * g + state.pNear[i] * g * g;
-    const f = state.color[i] === state.color[n] ? 1 - state.color[i] * 0.15 : 1;
+    const f = state.color[i] === state.color[n] ? .99 : 1;
     const d = multiplyScalar(
       unitApprox(subtract(nPos, pos)),
       magnitude * f * dt * dt

@@ -18,14 +18,14 @@ const gradientCircle = (r, restDensity, color) => {
   const gradient = ctx.createRadialGradient(s, s, 0, s, s, s);
   gradient.addColorStop(
     0,
-    `rgba(${color.r * 255}, ${color.g * 255}, ${color.b * 255}, .66)`
+    `rgba(${color.r * 255}, ${color.g * 255}, ${color.b * 255}, ${.6 / restDensity})`
   );
   gradient.addColorStop(
-    0.2,
-    `rgba(${color.r * 255}, ${color.g * 255}, ${color.b * 255}, .2)`
+    0.3,
+    `rgba(${color.r * 255}, ${color.g * 255}, ${color.b * 255}, ${.2 / restDensity})`
   );
   gradient.addColorStop(
-    0.8,
+    0.9,
     `rgba(${color.r * 255}, ${color.g * 255}, ${color.b * 255}, 0)`
   );
 
