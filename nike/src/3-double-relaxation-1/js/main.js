@@ -51,13 +51,13 @@ const RENDER_PLANE = true;
 const RECORD = false;
 
 const STIFFNESS = 20;
-const STIFFNESS_NEAR = 100;
-const REST_DENSITY = 6;
+const STIFFNESS_NEAR = 70;
+const REST_DENSITY = 5;
 const INTERACTION_RADIUS = (viewportHeight / GRID_CELLS) * 2.5;
 const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS;
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2;
 const GRAVITY = [0, -35];
-const BROWNIAN_MOTION = 0.5;
+const BROWNIAN_MOTION = 3;
 
 const colors = [
   new Color(255, 222, 0),
@@ -334,29 +334,31 @@ const gradient = (i, n) => {
   return g;
 };
 
-const contain = i => {
+const contain = (i, dt) => {
   let pos = [state.x[i], state.y[i]];
 
   if (lengthSq(pos) > boundingArea.radiusSq) {
     pos = multiplyScalar(unit(pos), boundingArea.radius);
     state.x[i] = pos[0];
     state.y[i] = pos[1];
+
+    const brownianMotion = multiplyScalar([
+      (Math.random() - 0.5) * 2,
+      (Math.random() - 0.5) * 2
+    ], dt * BROWNIAN_MOTION)
+
+    pos = add(pos, brownianMotion)
+    
+    if (lengthSq(pos) < boundingArea.radiusSq) {
+      state.oldX[i] -= brownianMotion[0]
+      state.oldY[i] -= brownianMotion[1]
+    }
   }
 };
 
 const calculateVelocity = (i, dt) => {
-  let pos = [state.x[i], state.y[i]];
-  const old = [state.oldX[i], state.oldY[i]];
-
-  const dtSqrt = Math.sqrt(dt);
-
-  const dx = normalRandom(0, dtSqrt) * BROWNIAN_MOTION;
-  const dy = normalRandom(0, dtSqrt) * BROWNIAN_MOTION;
-
-  if (lengthSq(add([dx, dy], pos)) > boundingArea.radiusSq) {
-    pos[0] -= dx;
-    pos[1] -= dy;
-  }
+  let old = [state.oldX[i], state.oldY[i]];
+  const pos = [state.x[i], state.y[i]];
 
   const v = multiplyScalar(subtract(pos, old), 1 / dt);
 
