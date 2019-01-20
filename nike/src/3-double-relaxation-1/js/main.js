@@ -8,6 +8,10 @@
  * any questions you may have on Twitter, @peeke__
  */
 
+// https://gist.github.com/mbostock/8027637
+// https://github.com/rubenv/point-in-svg-polygon
+// https://codepen.io/yorshahar/pen/eWWoNb
+
 import {
   PointLight,
   Scene,
@@ -50,10 +54,10 @@ const GRID_CELLS = 54;
 const RENDER_PLANE = true;
 const RECORD = false;
 
-const STIFFNESS = 20;
+const STIFFNESS = 30;
 const STIFFNESS_NEAR = 100;
-const REST_DENSITY = 5;
-const INTERACTION_RADIUS = (viewportHeight / GRID_CELLS) * 2.5;
+const REST_DENSITY = 8;
+const INTERACTION_RADIUS = (viewportHeight / GRID_CELLS) * 3;
 const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS;
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2;
 const GRAVITY = [0, -35];
@@ -112,7 +116,7 @@ if (RENDER_PLANE) {
   composer.addPass(blendPointsPass);
 }
 
-const boundingArea = {
+const canvasRect = {
   w: viewportHeight,
   h: viewportHeight,
   l: viewportHeight * -0.475,
@@ -123,18 +127,18 @@ const boundingArea = {
   radiusSq: (viewportHeight * 0.475) ** 2
 };
 
-window.boundingArea = boundingArea;
+window.canvasRect = canvasRect;
 
 const screenToWorldSpace = ({ x, y }) => ({
   x:
     (x / width - (0.5 * (window.innerWidth - width)) / width - 0.5) *
-    boundingArea.w,
+    canvasRect.w,
   y:
     (y / height - (0.5 * (window.innerHeight - height)) / height - 0.5) *
-    -boundingArea.h
+    -canvasRect.h
 });
 
-const worldToGrid = v => (v / boundingArea.w + 0.5) * GRID_CELLS;
+const worldToGrid = v => (v / canvasRect.w + 0.5) * GRID_CELLS;
 
 const mass = i => {
   return 0.85 + state.color[i] / 10;
@@ -171,18 +175,20 @@ for (let i = 0; i < PARTICLE_COUNT; i++) {
   state.x[i] =
     Math.cos(Math.random() * 2 * Math.PI) *
     Math.sqrt(Math.random()) *
-    boundingArea.r;
+    canvasRect.r;
   state.y[i] =
     Math.cos(Math.random() * 2 * Math.PI) *
     Math.sqrt(Math.random()) *
-    boundingArea.t;
+    canvasRect.t;
   state.oldX[i] = state.x[i];
   state.oldY[i] = state.y[i];
   state.vx[i] = 0;
   state.vy[i] = 0;
   state.color[i] = Math.floor(Math.random() * colors.length);
 
-  hashMap.add(worldToGrid(state.x[i]), worldToGrid(state.y[i]), i);
+  const gridX = (state.x[i] / canvasRect.w + 0.5) * GRID_CELLS;
+  const gridY = (state.y[i] / canvasRect.h + 0.5) * GRID_CELLS;
+  hashMap.add(gridX, gridY, i);
 }
 
 for (let i = 0; i < PARTICLE_COUNT; i++) {
@@ -206,7 +212,9 @@ const simulate = dt => {
     state.y[i] += state.vy[i] * dt;
 
     // Update hashmap
-    hashMap.add(worldToGrid(state.x[i]), worldToGrid(state.y[i]), i);
+    const gridX = (state.x[i] / canvasRect.w + 0.5) * GRID_CELLS;
+    const gridY = (state.y[i] / canvasRect.h + 0.5) * GRID_CELLS;
+    hashMap.add(gridX, gridY, i);
   }
 
   for (let i = 0; i < PARTICLE_COUNT; i++) {
@@ -251,10 +259,13 @@ const applyGlobalForces = (i, dt) => {
 };
 
 const getNeighborsWithGradients = i => {
+  const gridX = (state.x[i] / canvasRect.w + 0.5) * GRID_CELLS;
+  const gridY = (state.y[i] / canvasRect.h + 0.5) * GRID_CELLS;
+  const radius = (INTERACTION_RADIUS / canvasRect.w) * GRID_CELLS;
   const results = hashMap.query(
-    worldToGrid(state.x[i]),
-    worldToGrid(state.y[i]),
-    (INTERACTION_RADIUS / boundingArea.w) * GRID_CELLS * 2
+    gridX,
+    gridY,
+    radius
   );
 
   const neighbors = [];
@@ -337,8 +348,8 @@ const gradient = (i, n) => {
 const contain = (i, dt) => {
   let pos = [state.x[i], state.y[i]];
 
-  if (lengthSq(pos) > boundingArea.radiusSq) {
-    pos = multiplyScalar(unit(pos), boundingArea.radius);
+  if (lengthSq(pos) > canvasRect.radiusSq) {
+    pos = multiplyScalar(unit(pos), canvasRect.radius);
     state.x[i] = pos[0];
     state.y[i] = pos[1];
 
@@ -349,7 +360,7 @@ const contain = (i, dt) => {
 
     pos = add(pos, brownianMotion)
     
-    if (lengthSq(pos) < boundingArea.radiusSq) {
+    if (lengthSq(pos) < canvasRect.radiusSq) {
       state.oldX[i] -= brownianMotion[0]
       state.oldY[i] -= brownianMotion[1]
     }

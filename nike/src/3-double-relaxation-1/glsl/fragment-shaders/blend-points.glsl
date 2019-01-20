@@ -7,9 +7,9 @@ uniform float verticalCells;
 uniform sampler2D tDiffuse;
 uniform sampler2D grid;
 
-const vec3 COLOR1 = vec3(0.0, 230.0, 180.0) / 255.0;
+const vec3 COLOR1 = vec3(46.0, 32.0, 103.0) / 255.0;
 const vec3 COLOR2 = vec3(0.0, 125.0, 255.0) / 255.0;
-const vec3 COLOR3 = vec3(46.0, 32.0, 103.0) / 255.0;
+const vec3 COLOR3 = vec3(0.0, 230.0, 180.0) / 255.0;
 
 float min(float a, float b, float c) {
   return min(min(a, b), c);
