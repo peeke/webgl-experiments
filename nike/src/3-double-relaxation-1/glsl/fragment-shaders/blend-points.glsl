@@ -61,7 +61,7 @@ vec4 sample(vec2 uv) {
   
   return maxval >= .1
     ? vec4(color, maxval * 9.0)
-    : vec4(1.0, 1.0, 1.0, 0.0);
+    : vec4(1.0, 1.0, 1.0, 1.0);
 }
 
 void main() {

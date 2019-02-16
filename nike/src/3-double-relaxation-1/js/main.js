@@ -37,7 +37,9 @@ import {
   add,
   subtract,
   unit,
-  unitApprox
+  unitApprox,
+  clone,
+  dot
 } from "../../js/2dVectorOperations";
 import EffectComposer from "../../js/EffectComposer";
 import RenderPass from "../../js/RenderPass";
@@ -49,19 +51,19 @@ const calculateViewportHeight = (perspectiveAngle, distance) => {
 
 const viewportHeight = calculateViewportHeight(75, 30);
 
-const PARTICLE_COUNT = 1200;
+const PARTICLE_COUNT = 1500;
 const GRID_CELLS = 54;
 const RENDER_PLANE = true;
-const RECORD = false;
+const RECORD = true;
 
-const STIFFNESS = 30;
+const STIFFNESS = 35;
 const STIFFNESS_NEAR = 100;
-const REST_DENSITY = 8;
-const INTERACTION_RADIUS = (viewportHeight / GRID_CELLS) * 3;
+const REST_DENSITY = 5;
+const INTERACTION_RADIUS =
+  ((viewportHeight / GRID_CELLS) * 2.5 * 38) / Math.sqrt(PARTICLE_COUNT);
 const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS;
 const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2;
 const GRAVITY = [0, -35];
-const BROWNIAN_MOTION = 3;
 
 const colors = [
   new Color(255, 222, 0),
@@ -98,10 +100,10 @@ const scene = new Scene();
 const camera = new PerspectiveCamera(75, width / height, 0.1, 1000);
 camera.position.z = 30;
 
-const renderer = new WebGLRenderer({ canvas, alpha: true });
+const renderer = new WebGLRenderer({ canvas, alpha: false });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(width, height);
-// renderer.setClearColor(new Color(0x000000));
+renderer.setClearColor(new Color(0x000000));
 
 const composer = new EffectComposer(renderer);
 const renderPass = new RenderPass(scene, camera);
@@ -119,12 +121,12 @@ if (RENDER_PLANE) {
 const canvasRect = {
   w: viewportHeight,
   h: viewportHeight,
-  l: viewportHeight * -0.475,
-  r: viewportHeight * 0.475,
-  t: viewportHeight * 0.475,
-  b: viewportHeight * -0.475,
-  radius: viewportHeight * 0.475,
-  radiusSq: (viewportHeight * 0.475) ** 2
+  l: viewportHeight * -0.485,
+  r: viewportHeight * 0.485,
+  t: viewportHeight * 0.485,
+  b: viewportHeight * -0.485,
+  radius: viewportHeight * 0.485,
+  radiusSq: (viewportHeight * 0.485) ** 2
 };
 
 window.canvasRect = canvasRect;
@@ -244,10 +246,10 @@ const applyGlobalForces = (i, dt) => {
   force = add(force, [0, -0.25 * state.color[i]]);
 
   // if (mouseDown) {
-    const fromMouse = subtract([state.x[i], state.y[i]], mouse);
-    const scalar = Math.min(350, 2700 / lengthSq(fromMouse));
-    const mouseForce = multiplyScalar(unitApprox(fromMouse), scalar);
-    force = add(force, mouseForce);
+  const fromMouse = subtract([state.x[i], state.y[i]], mouse);
+  const scalar = Math.min(350, 2700 / lengthSq(fromMouse));
+  const mouseForce = multiplyScalar(unitApprox(fromMouse), scalar);
+  force = add(force, mouseForce);
   // }
 
   // f = m * a --> a = f / m
@@ -262,11 +264,7 @@ const getNeighborsWithGradients = i => {
   const gridX = (state.x[i] / canvasRect.w + 0.5) * GRID_CELLS;
   const gridY = (state.y[i] / canvasRect.h + 0.5) * GRID_CELLS;
   const radius = (INTERACTION_RADIUS / canvasRect.w) * GRID_CELLS;
-  const results = hashMap.query(
-    gridX,
-    gridY,
-    radius
-  );
+  const results = hashMap.query(gridX, gridY, radius);
 
   const neighbors = [];
 
@@ -309,7 +307,7 @@ const relax = (i, neighbors, dt) => {
     const nPos = [state.x[n], state.y[n]];
 
     const magnitude = state.p[i] * g + state.pNear[i] * g * g;
-    const f = state.color[i] === state.color[n] ? .99 : 1;
+    const f = state.color[i] === state.color[n] ? 0.99 : 1;
     const d = multiplyScalar(
       unitApprox(subtract(nPos, pos)),
       magnitude * f * dt * dt
@@ -346,24 +344,17 @@ const gradient = (i, n) => {
 };
 
 const contain = (i, dt) => {
-  let pos = [state.x[i], state.y[i]];
+  const pos = [state.x[i], state.y[i]];
 
   if (lengthSq(pos) > canvasRect.radiusSq) {
-    pos = multiplyScalar(unit(pos), canvasRect.radius);
-    state.x[i] = pos[0];
-    state.y[i] = pos[1];
+    const unitPos = unit(pos);
+    const newPos = multiplyScalar(clone(unitPos), canvasRect.radius);
+    state.x[i] = newPos[0];
+    state.y[i] = newPos[1];
 
-    const brownianMotion = multiplyScalar([
-      (Math.random() - 0.5) * 2,
-      (Math.random() - 0.5) * 2
-    ], dt * BROWNIAN_MOTION)
-
-    pos = add(pos, brownianMotion)
-    
-    if (lengthSq(pos) < canvasRect.radiusSq) {
-      state.oldX[i] -= brownianMotion[0]
-      state.oldY[i] -= brownianMotion[1]
-    }
+    const antiStick = multiplyScalar(unitPos, INTERACTION_RADIUS * dt);
+    state.oldX[i] += antiStick[0];
+    state.oldY[i] += antiStick[1];
   }
 };
 
@@ -377,7 +368,7 @@ const calculateVelocity = (i, dt) => {
   state.vy[i] = v[1];
 };
 
-const maxFrameDuration = 1 / 20;
+const maxFrameDuration = 1 / 35;
 
 let frame;
 let tPrev;
