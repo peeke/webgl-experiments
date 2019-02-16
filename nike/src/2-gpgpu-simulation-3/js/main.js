@@ -17,11 +17,15 @@ import wavesFragmentShader from "../glsl/compute-shaders/waves.glsl";
 
 import { startRecording, stopRecording, download } from "../../js/utils/record";
 
+const rad = deg => (deg / 180) * Math.PI;
+
 const canvas = document.querySelector("#canvas");
 const { offsetWidth: width, offsetHeight: height } = canvas;
 const calculateViewportHeight = (perspectiveAngle, distance) => {
-  return Math.tan((perspectiveAngle / 180) * Math.PI) * distance;
+  return Math.tan(rad(perspectiveAngle / 2)) * distance * 2;
 };
+
+console.log(width, height);
 
 const scene = new Scene();
 const camera = new PerspectiveCamera(75, width / height, 0.1, 1000);
@@ -43,10 +47,15 @@ const material = new MeshPhongMaterial({ color: 0x00c0ff });
 const plane = new Mesh(geometry, material);
 scene.add(plane);
 
-const light = new DirectionalLight(0xffffff, 1, 100);
+const light = new DirectionalLight(0xffffff, 0.8, 100);
 light.position.set(0, 0, 30);
 light.lookAt(0, 0, 0);
 scene.add(light);
+
+const light2 = new PointLight(0xffffff, 1, 100);
+light2.position.set(viewportHeight, 0, 0);
+light.lookAt(0, 0, 0);
+scene.add(light2);
 
 const intermediateRenderTarget = new WebGLRenderTarget(width, height);
 const intermediateScene = new Scene();
