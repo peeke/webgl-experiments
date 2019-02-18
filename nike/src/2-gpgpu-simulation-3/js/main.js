@@ -43,11 +43,11 @@ const geometry = new PlaneGeometry(
 );
 
 // const computeMaterial = new TextureMaterial(canvas);
-const material = new MeshPhongMaterial({ color: 0x00c0ff });
+const material = new MeshPhongMaterial({ color: 0x0071e5 });
 const plane = new Mesh(geometry, material);
 scene.add(plane);
 
-const light = new DirectionalLight(0xffffff, 0.8, 100);
+const light = new DirectionalLight(0xe90f47, 0.8, 100);
 light.position.set(0, 0, 30);
 light.lookAt(0, 0, 0);
 scene.add(light);
@@ -130,6 +130,7 @@ const render = () => {
   );
 
   material.normalMap = intermediateRenderTarget.texture;
+  // material.map = intermediateRenderTarget.texture;
   // material.displacementBias = 1.0;
 
   renderer.render(scene, camera);
