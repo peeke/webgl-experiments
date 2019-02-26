@@ -1,1 +1,0 @@
-{"dependencies":[],"generated":{"js":"module.exports = `void main() {\n  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);\n}\n`"},"hash":"0aa2a81098e74bc5e10282f3d4b84d0a","cacheData":{}}

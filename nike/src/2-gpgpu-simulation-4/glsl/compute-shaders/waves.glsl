@@ -54,7 +54,7 @@ void main(){
   if(dist<40.){
     float t=1.-dist/40.;
     float eased=(1.+sin(3.1415*t-3.1415/2.))/2.;
-    color=lerp(color,color+.005*eased,eased);
+    color=lerp(color,color+.000125,eased);
   }
   
   vec2 normalized=(uv-vec2(.5))*2.;
@@ -62,9 +62,9 @@ void main(){
     color=1.;
   }
   
-  color=color*.9995+(s(t,ox).x+s(t,-ox).x+s(t,oy).x+s(t,-oy).x)/4.*.0005;
+  color=color*.999+(s(t,ox).x+s(t,-ox).x+s(t,oy).x+s(t,-oy).x)/4.*.001;
   
-  float newColor=clamp(color*.995+.5*.005,0.,1.);
+  float newColor=clamp(color*.9995+.5*.0005,0.,1.);
   float oldColor=s(t).x;
   
   gl_FragColor=vec4(newColor,oldColor,1.,alpha);

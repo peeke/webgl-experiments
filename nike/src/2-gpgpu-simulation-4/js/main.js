@@ -4,19 +4,35 @@ import {
   CircleGeometry,
   Mesh,
   PointLight,
+  AmbientLight,
   DirectionalLight,
   Scene,
   PerspectiveCamera,
   WebGLRenderer,
   WebGLRenderTarget,
   Vector2,
-  MeshPhongMaterial
+  MeshBasicMaterial,
+  MeshPhongMaterial,
+  MeshLambertMaterial,
+  SphereGeometry,
+  CubeTextureLoader,
+  MixOperation,
+  RGBFormat
 } from "three";
 
-import { NormalMapMaterial, AlphaMapMaterial } from "./material";
-import wavesFragmentShader from "../glsl/compute-shaders/waves.glsl";
+import TexturePass from "../../js/utils/TexturePass";
+import normalMapShader from "../glsl/fragment-shaders/normal-map.glsl";
+import overlayShader from "../glsl/fragment-shaders/overlay-blending.glsl";
+import wavesShader from "../glsl/compute-shaders/waves.glsl";
+import causticsShader from "../glsl/fragment-shaders/caustics.glsl";
 
 import { startRecording, stopRecording, download } from "../../js/utils/record";
+import envPx from "../img/px.jpg";
+import envPy from "../img/py.jpg";
+import envPz from "../img/py.jpg";
+import envNx from "../img/nx.jpg";
+import envNy from "../img/ny.jpg";
+import envNz from "../img/nz.jpg";
 
 const rad = deg => (deg / 180) * Math.PI;
 
@@ -25,8 +41,6 @@ const { offsetWidth: width, offsetHeight: height } = canvas;
 const calculateViewportHeight = (perspectiveAngle, distance) => {
   return Math.tan(rad(perspectiveAngle / 2)) * distance * 2;
 };
-
-console.log(width, height);
 
 const scene = new Scene();
 const camera = new PerspectiveCamera(75, width / height, 0.1, 1000);
@@ -40,49 +54,67 @@ const renderer = new WebGLRenderer({
 renderer.setSize(width, height);
 renderer.setClearColor(0xffffff);
 
+const intermediateTarget = new WebGLRenderTarget(width, height);
+const normalMapPass = new TexturePass(renderer, normalMapShader);
+const causticsPass = new TexturePass(renderer, causticsShader);
+
 const viewportHeight = calculateViewportHeight(75, 30);
-// const geometry = new PlaneGeometry(
-//   (viewportHeight * width) / height,
-//   viewportHeight,
-//   32
+const planeGeometry = new PlaneGeometry(
+  (viewportHeight * width) / height,
+  viewportHeight,
+  32
+);
+
+const envMap = new CubeTextureLoader().load([
+  envPx,
+  envNx,
+  envPy,
+  envNy,
+  envPz,
+  envNz
+]);
+scene.background = envMap;
+
+const bottomPlaneMaterial = new MeshBasicMaterial({ color: 0xebe5bf });
+const bottomPlane = new Mesh(planeGeometry, bottomPlaneMaterial);
+bottomPlane.position.set(0, 0, 0);
+scene.add(bottomPlane);
+
+const topPlaneMaterial = new MeshPhongMaterial({
+  color: 0xc6e8ff,
+  premultipliedAlpha: true,
+  transparent: true,
+  opacity: 0.66,
+  shininess: 1,
+  specular: 0x32535d,
+  envMap,
+  combine: MixOperation,
+  reflectivity: 0.5
+});
+const topPlane = new Mesh(planeGeometry, topPlaneMaterial);
+topPlane.position.set(0, 0, 0);
+scene.add(topPlane);
+
+// const shpereMaterial = new MeshPhongMaterial({
+//   color: 0xcccccc,
+//   premultipliedAlpha: true,
+//   shininess: 30,
+//   specular: 0xffffff
+// });
+// const sphere = new Mesh(
+//   new SphereGeometry(viewportHeight / 10),
+//   shpereMaterial
 // );
-const geometry = new CircleGeometry(viewportHeight / 2, 128);
+// sphere.position.set(0, 0, 0);
+// scene.add(sphere);
 
-// const computeMaterial = new TextureMaterial(canvas);
-const material = new MeshPhongMaterial({ color: 0x084d8e });
-const plane = new Mesh(geometry, material);
-scene.add(plane);
-
-const light = new DirectionalLight(0xe90f47, 1.5);
-light.position.set(0, 0, 30);
+const light = new DirectionalLight(0xffffff, 1);
+light.position.set(viewportHeight * 2, viewportHeight * 2, viewportHeight);
 light.lookAt(0, 0, 0);
 scene.add(light);
 
-const light2 = new PointLight(0xffffff, 1, 100);
-light2.position.set(viewportHeight, viewportHeight / -2, 0);
-light.lookAt(0, 0, 0);
-scene.add(light2);
-
-const light3 = new DirectionalLight(0xf4e841, 0.2);
-light3.position.set(30, 0, 0);
-light3.lookAt(0, 0, 0);
-scene.add(light3);
-
-const normalMapRenderTarget = new WebGLRenderTarget(width, height);
-const normalMapScene = new Scene();
-const normalMapCamera = camera.clone();
-
-const normalMapMaterial = new NormalMapMaterial(width, height);
-const normalMapPlane = new Mesh(geometry.clone(), normalMapMaterial);
-normalMapScene.add(normalMapPlane);
-
-// const stencilRenderTarget = new WebGLRenderTarget(width, height);
-// const stencilScene = new Scene();
-// const stencilCamera = camera.clone();
-
-// const stencilMaterial = new StencilMaterial(width, height);
-// const stencilPlane = new Mesh(geometry.clone(), stencilMaterial);
-// stencilScene.add(stencilPlane);
+const ambientLight = new AmbientLight(0xffffff, 0.5); // soft white light
+scene.add(ambientLight);
 
 const gpuCompute = new GPUComputationRenderer(width, height, renderer);
 const gpTexture = gpuCompute.createTexture();
@@ -90,7 +122,7 @@ initTexture(gpTexture);
 
 const gpVariable = gpuCompute.addVariable(
   "textureWaves",
-  wavesFragmentShader,
+  wavesShader,
   gpTexture
 );
 gpuCompute.setVariableDependencies(gpVariable, [gpVariable]);
@@ -108,7 +140,6 @@ let mouse = new Vector2(-2, -2);
 const offset = canvas.getBoundingClientRect();
 window.addEventListener("mousemove", e => {
   mouse = new Vector2(e.clientX - offset.left, height - e.clientY + offset.top);
-  // material.uniforms.u_mouse.needsUpdate = true;
 });
 
 const error = gpuCompute.init();
@@ -134,25 +165,24 @@ const render = () => {
   gpVariable.material.uniforms.u_mouse.value = mouse;
 
   // Do the gpu computation
-  let i = 2;
+  let i = 3;
   while (i--) {
     gpuCompute.compute();
   }
 
   // Get compute output in custom uniform
   const renderTarget = gpuCompute.getCurrentRenderTarget(gpVariable);
-  normalMapMaterial.uniforms.u_texture.value = renderTarget.texture;
-  // stencilMaterial.uniforms.u_texture.value = renderTarget.texture;
+  const heightMap = renderTarget.texture;
+  const normalMap = normalMapPass.process(heightMap);
 
-  renderer.render(normalMapScene, normalMapCamera, normalMapRenderTarget);
-  // renderer.render(stencilScene, stencilCamera, stencilRenderTarget);
+  const caustics = causticsPass.process(heightMap);
 
-  material.normalMap = normalMapRenderTarget.texture;
-  // material.stencil = stencilRenderTarget.texture;
-  // material.map = normalMapRenderTarget.texture;
-  // material.displacementBias = 1.0;
+  bottomPlaneMaterial.map = caustics;
+  topPlaneMaterial.normalMap = normalMap;
 
   renderer.render(scene, camera);
+
+  mouse = new Vector2(-2, -2);
 };
 
 render();

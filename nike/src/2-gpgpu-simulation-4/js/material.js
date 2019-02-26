@@ -37,20 +37,4 @@ function AlphaMapMaterial(width, height) {
   });
 }
 
-function OverlayMaterial(width, height) {
-  return new ShaderMaterial({
-    uniforms: {
-      u_inv_resolution: {
-        value: new Vector2(1 / width, 1 / height)
-      },
-      u_texture: {
-        type: "t",
-        value: new Texture()
-      }
-    },
-    vertexShader,
-    fragmentShader: overlayShader
-  });
-}
-
-export { NormalMapMaterial, AlphaMapMaterial, OverlayMaterial };
+export { NormalMapMaterial, AlphaMapMaterial };
