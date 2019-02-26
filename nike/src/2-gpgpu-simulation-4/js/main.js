@@ -15,6 +15,7 @@ import {
   MeshPhongMaterial,
   MeshLambertMaterial,
   SphereGeometry,
+  TextureLoader,
   CubeTextureLoader,
   MixOperation,
   RGBFormat
@@ -33,6 +34,7 @@ import envPz from "../img/py.jpg";
 import envNx from "../img/nx.jpg";
 import envNy from "../img/ny.jpg";
 import envNz from "../img/nz.jpg";
+import mask from "../img/mask.png";
 
 const rad = deg => (deg / 180) * Math.PI;
 
@@ -75,7 +77,12 @@ const envMap = new CubeTextureLoader().load([
 ]);
 scene.background = envMap;
 
-const bottomPlaneMaterial = new MeshBasicMaterial({ color: 0xebe5bf });
+var maskMap = new TextureLoader().load(mask);
+
+const bottomPlaneMaterial = new MeshBasicMaterial({
+  color: 0xebe5bf,
+  alphaMap: maskMap
+});
 const bottomPlane = new Mesh(planeGeometry, bottomPlaneMaterial);
 bottomPlane.position.set(0, 0, 0);
 scene.add(bottomPlane);
@@ -85,11 +92,12 @@ const topPlaneMaterial = new MeshPhongMaterial({
   premultipliedAlpha: true,
   transparent: true,
   opacity: 0.66,
-  shininess: 1,
-  specular: 0x32535d,
+  shininess: 0,
+  specular: 0xffffff,
   envMap,
   combine: MixOperation,
-  reflectivity: 0.5
+  reflectivity: 0.8,
+  alphaMap: maskMap
 });
 const topPlane = new Mesh(planeGeometry, topPlaneMaterial);
 topPlane.position.set(0, 0, 0);
