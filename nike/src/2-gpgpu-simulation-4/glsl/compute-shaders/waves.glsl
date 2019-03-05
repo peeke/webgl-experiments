@@ -54,7 +54,7 @@ void main(){
   if(dist<40.){
     float t=1.-dist/40.;
     float eased=(1.+sin(3.1415*t-3.1415/2.))/2.;
-    color=lerp(color,color+.000125,eased);
+    color=lerp(color,color+.00025,eased);
   }
   
   vec2 normalized=(uv-vec2(.5))*2.;

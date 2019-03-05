@@ -16,6 +16,8 @@ body {
 canvas {
   width: 90vmin;
   height: 90vmin;
+  max-width: 800px;
+  max-height: 800px;
   border: 1px solid #eee;
   border-radius: 45vmin;
   overflow: hidden;

@@ -9,7 +9,7 @@ void main(){
   float val_u=texture2D(u_texture,uv+vec2(u_inv_resolution.x,0.)).x;
   float val_v=texture2D(u_texture,uv+vec2(0.,u_inv_resolution.y)).x;
   
-  float height=.005;
+  float height=.0025;
   gl_FragColor=vec4((.5*normalize(vec3(val-val_u,val-val_v,height))+.5),1.);
   
 }

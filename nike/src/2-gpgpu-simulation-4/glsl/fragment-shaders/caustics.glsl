@@ -14,5 +14,5 @@ void main(){
   
   float color=clamp(1.-sin(angle*1.33)/.00925,0.,1.);
   
-  gl_FragColor=vec4(vec3(.8+.2*color),1.);
+  gl_FragColor=vec4(vec3(.5+.5*color),1.);
 }
