@@ -26,7 +26,7 @@ import {
 import TexturePass from "../../js/utils/TexturePass";
 import normalMapShader from "../glsl/fragment-shaders/normal-map.glsl";
 import refractShader from "../glsl/fragment-shaders/refract.glsl";
-import multiplyShader from "../glsl/fragment-shaders/multiply.glsl";
+import screenShader from "../glsl/fragment-shaders/screen.glsl";
 import wavesShader from "../glsl/compute-shaders/waves.glsl";
 import causticsShader from "../glsl/fragment-shaders/caustics.glsl";
 
@@ -81,7 +81,7 @@ const refractPass = new TexturePass(renderer, refractShader, {
     value: new Texture()
   }
 });
-const combinePass = new TexturePass(renderer, multiplyShader, {
+const combinePass = new TexturePass(renderer, screenShader, {
   u_texture2: {
     value: new Texture()
   }
@@ -107,7 +107,7 @@ const stencilMap = new TextureLoader().load(stencil);
 const bottomTexture = new TextureLoader().load(bottom);
 
 const bottomPlaneMaterial = new MeshBasicMaterial({
-  color: 0xebe5bf,
+  color: 0xffffff,
   map: bottomTexture
 });
 const bottomPlane = new Mesh(planeGeometry, bottomPlaneMaterial);
@@ -126,15 +126,15 @@ bottomFlattenedPlane.position.set(0, 0, -10);
 topScene.add(bottomFlattenedPlane);
 
 const topPlaneMaterial = new MeshPhongMaterial({
-  color: 0x004777,
+  color: 0x1989d5,
   premultipliedAlpha: true,
   transparent: true,
-  opacity: 0.75,
-  shininess: 10,
+  opacity: 0.4,
+  shininess: 0,
   specular: 0xffffff,
   envMap,
   combine: MixOperation,
-  reflectivity: 0.6
+  reflectivity: 1.0
 });
 const topPlane = new Mesh(planeGeometry, topPlaneMaterial);
 topPlane.position.set(0, 0, 0);
@@ -232,17 +232,18 @@ const render = () => {
   const heightMap = renderTarget.texture;
   const normalMap = normalMapPass.process(heightMap);
 
-  const caustics = causticsPass.process(heightMap);
+  const caustics = causticsPass.process(normalMap);
 
   combinePass.uniforms.u_texture2.value = bottomTexture;
   const combined = combinePass.process(caustics);
 
   bottomPlaneMaterial.map = combined;
+  // bottomPlaneMaterial.map = caustics;
   topPlaneMaterial.normalMap = normalMap;
 
   renderer.render(bottomScene, camera, intermediateTarget);
 
-  // bottomFlattenedPlaneMaterial.map = heightMap;
+  // bottomFlattenedPlaneMaterial.map = intermediateTarget.texture;
   refractPass.uniforms.u_refract.value = heightMap;
   bottomFlattenedPlaneMaterial.map = refractPass.process(
     intermediateTarget.texture
