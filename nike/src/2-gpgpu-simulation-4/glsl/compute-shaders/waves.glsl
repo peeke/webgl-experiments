@@ -1,6 +1,7 @@
 
 uniform vec2 u_mouse;
 uniform vec2 u_inv_resolution;
+uniform sampler2D u_waveMask;
 
 vec4 s(vec2 p){
   vec2 uv=p*u_inv_resolution;
@@ -11,10 +12,13 @@ vec4 s(vec2 p,vec2 o){
   vec2 uv=p*u_inv_resolution;
   vec2 no=o*u_inv_resolution;
   
-  vec2 normalized=(uv-vec2(.5)+no)*2.;
-  if(length(normalized)>.99){
+  if(texture2D(u_waveMask,uv+no).x<1.){
     return texture2D(textureWaves,uv);
   }
+  // vec2 normalized=(uv-vec2(.5)+no)*2.;
+  // if(length(normalized)>.99){
+    //   return texture2D(textureWaves,uv);
+  // }
   
   return texture2D(textureWaves,uv+no);
 }
