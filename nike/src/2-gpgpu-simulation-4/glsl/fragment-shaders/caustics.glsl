@@ -19,5 +19,5 @@ void main(){
   
   float color=caustic(uv);
   
-  gl_FragColor=vec4(vec3(color),1.);
+  gl_FragColor=vec4(vec3(color*.2),1.);
 }

@@ -126,15 +126,15 @@ bottomFlattenedPlane.position.set(0, 0, -10);
 topScene.add(bottomFlattenedPlane);
 
 const topPlaneMaterial = new MeshPhongMaterial({
-  color: 0x1989d5,
+  color: 0xd1faf2,
   premultipliedAlpha: true,
   transparent: true,
-  opacity: 0.4,
-  shininess: 0,
-  specular: 0xffffff,
+  opacity: 0.45,
+  shininess: 100,
+  specular: 0x18588e,
   envMap,
   combine: MixOperation,
-  reflectivity: 1.0
+  reflectivity: 0.8
 });
 const topPlane = new Mesh(planeGeometry, topPlaneMaterial);
 topPlane.position.set(0, 0, 0);
