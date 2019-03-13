@@ -1,1 +1,2 @@
 # webgl-experiments
+Instal parcel bundler and run `parcel src/index.html` to view the interactive experiments. To view to shaders in the shaders folder, use VS Code and [glslCanvas](https://marketplace.visualstudio.com/items?itemName=circledev.glsl-canvas).
