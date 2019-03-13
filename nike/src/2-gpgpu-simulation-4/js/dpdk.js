@@ -1,11 +1,7 @@
 import GPUComputationRenderer from "../../vendor/yomboprime/GPUComputationRenderer";
 import {
   PlaneGeometry,
-  BoxGeometry,
-  Geometry,
-  CylinderGeometry,
   Mesh,
-  PointLight,
   AmbientLight,
   DirectionalLight,
   Scene,
@@ -16,14 +12,10 @@ import {
   MeshBasicMaterial,
   MeshPhongMaterial,
   MeshLambertMaterial,
-  ShadowMaterial,
-  SphereGeometry,
   TextureLoader,
   CubeTextureLoader,
   MixOperation,
-  Texture,
-  RGBFormat,
-  PCFSoftShadowMap
+  Texture
 } from "three";
 
 import TexturePass from "../../js/utils/TexturePass";

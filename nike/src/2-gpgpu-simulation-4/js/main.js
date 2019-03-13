@@ -38,8 +38,10 @@ import envPz from "../img/py.jpg";
 import envNx from "../img/nx.jpg";
 import envNy from "../img/ny.jpg";
 import envNz from "../img/nz.jpg";
+import white from "../img/white.png";
 import bottom from "../img/bottom.jpg";
 import stencil from "../img/stencil.png";
+import waveMaskTexture from "../img/mask.png";
 
 const rad = deg => (deg / 180) * Math.PI;
 
@@ -97,7 +99,7 @@ const envMap = new CubeTextureLoader().load([
   envPx,
   envNx,
   envPy,
-  envNy,
+  white,
   envPz,
   envNz
 ]);
@@ -191,6 +193,9 @@ gpVariable.material.uniforms = {
   },
   u_mouse: {
     value: new Vector2(-2, -2)
+  },
+  u_waveMask: {
+    value: new TextureLoader().load(waveMaskTexture)
   }
 };
 

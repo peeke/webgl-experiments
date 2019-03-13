@@ -3,22 +3,22 @@ uniform vec2 u_mouse;
 uniform vec2 u_inv_resolution;
 uniform sampler2D u_waveMask;
 
-vec4 s(vec2 p){
+#define OX vec2(1.,.0)
+#define OY vec2(0.,1.)
+
+vec4 sample(vec2 p){
   vec2 uv=p*u_inv_resolution;
   return texture2D(textureWaves,uv);
 }
 
-vec4 s(vec2 p,vec2 o){
+vec4 sample(vec2 p,vec2 o){
   vec2 uv=p*u_inv_resolution;
   vec2 no=o*u_inv_resolution;
   
+  // Bounce at the edges of the wave mask
   if(texture2D(u_waveMask,uv+no).x<1.){
     return texture2D(textureWaves,uv);
   }
-  // vec2 normalized=(uv-vec2(.5)+no)*2.;
-  // if(length(normalized)>.99){
-    //   return texture2D(textureWaves,uv);
-  // }
   
   return texture2D(textureWaves,uv+no);
 }
@@ -36,42 +36,36 @@ void main(){
   vec2 uv=gl_FragCoord.xy*u_inv_resolution.xy;
   vec2 t=gl_FragCoord.xy;
   
-  float alpha=1.-smoothstep(.99,1.01,dot(uv-vec2(.5))*4.);
-  
-  // float alpha=dot(uv-vec2(.5))<.25?1.:0.;
-  if(alpha==0.){
-    gl_FragColor=vec4(0.);
-    return;
-  }
-  
   // https://web.archive.org/web/20160418004149/http://freespace.virgin.net/hugo.elias/graphics/x_water.htm
   // Buffer1 = x
   // Buffer2 = y
-  // Alpha channel = w
   
-  vec2 ox=vec2(1.,.0);// offsetX
-  vec2 oy=vec2(.0,1.);// offsetY
+  float surroundSample=
+  sample(t,OX).x+
+  sample(t,-OX).x+
+  sample(t,OY).x+
+  sample(t,-OY).x;
   
-  float color=(s(t,ox).x+s(t,-ox).x+s(t,oy).x+s(t,-oy).x)/2.-s(t).y;
+  float height=surroundSample/2.-sample(t).y;
   
+  // Mouse
   float dist=length(u_mouse-t.xy);
   if(dist<40.){
     float t=1.-dist/40.;
     float eased=(1.+sin(3.1415*t-3.1415/2.))/2.;
-    color=lerp(color,color+.00025,eased);
+    height=lerp(height,height+.00025,eased);
   }
   
-  vec2 normalized=(uv-vec2(.5))*2.;
-  if(length(normalized)>1.){
-    color=1.;
-  }
+  // Diffuse
+  height=height*.999+(surroundSample)/4.*.001;
   
-  color=color*.999+(s(t,ox).x+s(t,-ox).x+s(t,oy).x+s(t,-oy).x)/4.*.001;
+  // Dampen
+  height=clamp(height*.9995+.5*.0005,0.,1.);
   
-  float newColor=clamp(color*.9995+.5*.0005,0.,1.);
-  float oldColor=s(t).x;
+  // Update
+  float newColor=height;
+  float oldColor=sample(t).x;
   
-  gl_FragColor=vec4(newColor,oldColor,1.,alpha);
-  // gl_FragColor=vec4(u_mouse.x*u_inv_resolution.x);
+  gl_FragColor=vec4(newColor,oldColor,1.,1.);
   
 }
