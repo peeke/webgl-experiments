@@ -25,12 +25,15 @@ import {
 } from "three";
 
 import BlendPointsShader from "./BlendPointsShader";
-import gradientCircle from "./gradientCircle";
+import particleMesh from "./particleMesh";
 
 import { startRecording, stopRecording, download } from "../../js/utils/record";
-
+import calculateViewportHeight from "../../js/utils/calculateViewportHeight";
 import SpatialHashMap from "../../js/SpatialHashMap";
-import normalRandom from "../../js/normalRandom";
+import EffectComposer from "../../js/EffectComposer";
+import RenderPass from "../../js/RenderPass";
+import ShaderPass from "../../js/ShaderPass";
+import mapNumber from "../../js/mapNumber";
 import {
   multiplyScalar,
   lengthSq,
@@ -38,44 +41,50 @@ import {
   subtract,
   unit,
   unitApprox,
-  clone,
-  dot
+  clone
 } from "../../js/2dVectorOperations";
-import EffectComposer from "../../js/EffectComposer";
-import RenderPass from "../../js/RenderPass";
-import ShaderPass from "../../js/ShaderPass";
 
-const calculateViewportHeight = (perspectiveAngle, distance) => {
-  return Math.tan((perspectiveAngle / 2 / 180) * Math.PI) * distance * 2;
-};
-
-const viewportHeight = calculateViewportHeight(75, 30);
+const RENDER_PLANE = true;
+const RECORD = false;
 
 const PARTICLE_COUNT = 1500;
 const GRID_CELLS = 54;
-const RENDER_PLANE = true;
-const RECORD = true;
-
 const STIFFNESS = 35;
 const STIFFNESS_NEAR = 100;
 const REST_DENSITY = 5;
-const INTERACTION_RADIUS =
-  ((viewportHeight / GRID_CELLS) * 2.5 * 38) / Math.sqrt(PARTICLE_COUNT);
-const INTERACTION_RADIUS_INV = 1 / INTERACTION_RADIUS;
-const INTERACTION_RADIUS_SQ = INTERACTION_RADIUS ** 2;
 const GRAVITY = [0, -35];
 
-const colors = [
-  new Color(255, 222, 0),
-  new Color(245, 13, 73),
-  new Color(250, 205, 35)
-];
+const viewportHeight = calculateViewportHeight(75, 30);
+const dpr = window.devicePixelRatio;
+const interactionRadius =
+  ((viewportHeight / GRID_CELLS) * 2.5 * 38) / Math.sqrt(PARTICLE_COUNT);
+const interactionRadiusInv = 1 / interactionRadius;
+const interactionRadiusSq = interactionRadius ** 2;
+const hashMap = new SpatialHashMap(GRID_CELLS, GRID_CELLS);
 
-const particleMeshes = [
-  gradientCircle(INTERACTION_RADIUS, REST_DENSITY, new Color(1, 0, 0)),
-  gradientCircle(INTERACTION_RADIUS, REST_DENSITY, new Color(0, 1, 0)),
-  gradientCircle(INTERACTION_RADIUS, REST_DENSITY, new Color(0, 0, 1))
-];
+const screenToWorldSpace = ({ x, y }) => {
+  const offsetLeft = 0.5 * (window.innerHeight - height);
+  const offsetTop = 0.5 * (window.innerHeight - height);
+  return {
+    x: mapNumber(
+      x - offsetLeft,
+      0,
+      width,
+      canvasRect.w * -0.5,
+      canvasRect.w * 0.5
+    ),
+    y: mapNumber(
+      y - offsetTop,
+      0,
+      height,
+      canvasRect.w * 0.5,
+      canvasRect.w * -0.5
+    )
+  };
+};
+
+// Mass is derived from the color property
+const mass = i => 0.85 + state.color[i] / 10;
 
 const state = {
   x: new Float32Array(PARTICLE_COUNT),
@@ -89,11 +98,23 @@ const state = {
   g: new Float32Array(PARTICLE_COUNT),
   color: new Uint8Array(PARTICLE_COUNT),
   mesh: [],
-  neighbors: []
+  neighbors: [],
+  mouse: [0, 0]
 };
 
+const colors = [
+  new Color(255, 222, 0),
+  new Color(245, 13, 73),
+  new Color(250, 205, 35)
+];
+
+const particleMeshes = [
+  particleMesh(interactionRadius, REST_DENSITY, new Color(1, 0, 0)),
+  particleMesh(interactionRadius, REST_DENSITY, new Color(0, 1, 0)),
+  particleMesh(interactionRadius, REST_DENSITY, new Color(0, 0, 1))
+];
+
 const canvas = document.querySelector("#canvas");
-const dpr = window.devicePixelRatio;
 const { offsetWidth: width, offsetHeight: height } = canvas;
 
 const scene = new Scene();
@@ -129,31 +150,9 @@ const canvasRect = {
   radiusSq: (viewportHeight * 0.485) ** 2
 };
 
-window.canvasRect = canvasRect;
-
-const screenToWorldSpace = ({ x, y }) => ({
-  x:
-    (x / width - (0.5 * (window.innerWidth - width)) / width - 0.5) *
-    canvasRect.w,
-  y:
-    (y / height - (0.5 * (window.innerHeight - height)) / height - 0.5) *
-    -canvasRect.h
-});
-
-const worldToGrid = v => (v / canvasRect.w + 0.5) * GRID_CELLS;
-
-const mass = i => {
-  return 0.85 + state.color[i] / 10;
-};
-
-const hashMap = new SpatialHashMap(GRID_CELLS, GRID_CELLS);
-
 const light = new PointLight(0xffffff, 1, 100);
 light.position.set(20, 10, 30);
 scene.add(light);
-
-const mouse = [0, 0];
-let mouseDown = false;
 
 const data = new Uint8Array(4 * GRID_CELLS * GRID_CELLS);
 
@@ -245,15 +244,10 @@ const applyGlobalForces = (i, dt) => {
   force = add(force, Array.from(GRAVITY));
   force = add(force, [0, -0.25 * state.color[i]]);
 
-  // if (mouseDown) {
-  const fromMouse = subtract([state.x[i], state.y[i]], mouse);
+  const fromMouse = subtract([state.x[i], state.y[i]], state.mouse);
   const scalar = Math.min(350, 2700 / lengthSq(fromMouse));
   const mouseForce = multiplyScalar(unitApprox(fromMouse), scalar);
   force = add(force, mouseForce);
-  // }
-
-  // f = m * a --> a = f / m
-  // v += a * dt --> v += f * dt / m
 
   const m = mass(i);
   state.vx[i] += (force[0] * dt) / m;
@@ -263,7 +257,7 @@ const applyGlobalForces = (i, dt) => {
 const getNeighborsWithGradients = i => {
   const gridX = (state.x[i] / canvasRect.w + 0.5) * GRID_CELLS;
   const gridY = (state.y[i] / canvasRect.h + 0.5) * GRID_CELLS;
-  const radius = (INTERACTION_RADIUS / canvasRect.w) * GRID_CELLS;
+  const radius = (interactionRadius / canvasRect.w) * GRID_CELLS;
   const results = hashMap.query(gridX, gridY, radius);
 
   const neighbors = [];
@@ -325,19 +319,19 @@ const relax = (i, neighbors, dt) => {
   }
 };
 
-const gradientCache = new Float32Array(Math.ceil(INTERACTION_RADIUS_SQ * 5));
+const gradientCache = new Float32Array(Math.ceil(interactionRadiusSq * 5));
 
 const gradient = (i, n) => {
   const a = [state.x[i], state.y[i]];
   const b = [state.x[n], state.y[n]];
 
   const lsq = lengthSq(subtract(a, b));
-  if (lsq > INTERACTION_RADIUS_SQ) return 0;
+  if (lsq > interactionRadiusSq) return 0;
 
   const cacheIndex = (lsq * 5) | 0;
   if (gradientCache[cacheIndex]) return gradientCache[cacheIndex];
 
-  const g = Math.max(0, 1 - Math.sqrt(lsq) * INTERACTION_RADIUS_INV);
+  const g = Math.max(0, 1 - Math.sqrt(lsq) * interactionRadiusInv);
 
   gradientCache[cacheIndex] = g;
   return g;
@@ -352,7 +346,7 @@ const contain = (i, dt) => {
     state.x[i] = newPos[0];
     state.y[i] = newPos[1];
 
-    const antiStick = multiplyScalar(unitPos, INTERACTION_RADIUS * dt);
+    const antiStick = multiplyScalar(unitPos, interactionRadius * dt);
     state.oldX[i] += antiStick[0];
     state.oldY[i] += antiStick[1];
   }
@@ -398,24 +392,24 @@ const exit = () => {
 
 document.addEventListener("keyup", e => {
   if (e.which !== 32) return;
+  if (!RECORD) return;
 
   if (frame) {
-    exit();
-    RECORD && stopRecording();
-    RECORD && download();
+    stopRecording();
+    download();
   } else {
-    start();
-    RECORD && setTimeout(startRecording, 100);
+    setTimeout(startRecording, 100);
   }
 });
 
 window.addEventListener("mousemove", e => {
-  const { x, y } = screenToWorldSpace({ x: e.clientX, y: e.clientY });
-  mouse[0] = x;
-  mouse[1] = y;
+  const { x, y } = screenToWorldSpace({
+    x: e.clientX,
+    y: e.clientY,
+    width,
+    height
+  });
+  state.mouse = [x, y];
 });
-
-window.addEventListener("mousedown", () => (mouseDown = true));
-window.addEventListener("mouseup", () => (mouseDown = false));
 
 start();
