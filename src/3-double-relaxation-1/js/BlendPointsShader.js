@@ -10,11 +10,6 @@ const BlendPointsShader = {
     tDiffuse: { value: null },
     resolution: {
       value: new Vector2(window.innerWidth * dpr, window.innerHeight * dpr)
-    },
-    horizontalCells: { value: 48 },
-    verticalCells: { value: 48 },
-    grid: {
-      value: null
     }
   },
   vertexShader: basicVertexShader,

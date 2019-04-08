@@ -13,15 +13,10 @@
 // https://codepen.io/yorshahar/pen/eWWoNb
 
 import {
-  PointLight,
   Scene,
   PerspectiveCamera,
   WebGLRenderer,
-  Color,
-  DataTexture,
-  RGBAFormat,
-  UnsignedByteType,
-  LinearFilter
+  Color
 } from "three";
 
 import BlendPointsShader from "./BlendPointsShader";
@@ -60,26 +55,22 @@ const interactionRadius =
   ((viewportHeight / GRID_CELLS) * 2.5 * 38) / Math.sqrt(PARTICLE_COUNT);
 const interactionRadiusInv = 1 / interactionRadius;
 const interactionRadiusSq = interactionRadius ** 2;
+const radius = viewportHeight * 0.485;
+const radiusSq = (viewportHeight * 0.485) ** 2;
 const hashMap = new SpatialHashMap(GRID_CELLS, GRID_CELLS);
 
+const colors = [
+  new Color(255, 222, 0),
+  new Color(245, 13, 73),
+  new Color(250, 205, 35)
+];
+
 const screenToWorldSpace = ({ x, y }) => {
-  const offsetLeft = 0.5 * (window.innerHeight - height);
+  const offsetLeft = 0.5 * (window.innerWidth - width);
   const offsetTop = 0.5 * (window.innerHeight - height);
   return {
-    x: mapNumber(
-      x - offsetLeft,
-      0,
-      width,
-      canvasRect.w * -0.5,
-      canvasRect.w * 0.5
-    ),
-    y: mapNumber(
-      y - offsetTop,
-      0,
-      height,
-      canvasRect.w * 0.5,
-      canvasRect.w * -0.5
-    )
+    x: mapNumber(x - offsetLeft, 0, width, -radius, radius),
+    y: mapNumber(y - offsetTop, 0, height, radius, -radius)
   };
 };
 
@@ -101,12 +92,6 @@ const state = {
   neighbors: [],
   mouse: [0, 0]
 };
-
-const colors = [
-  new Color(255, 222, 0),
-  new Color(245, 13, 73),
-  new Color(250, 205, 35)
-];
 
 const particleMeshes = [
   particleMesh(interactionRadius, REST_DENSITY, new Color(1, 0, 0)),
@@ -131,72 +116,47 @@ const renderPass = new RenderPass(scene, camera);
 renderPass.renderToScreen = !RENDER_PLANE;
 composer.addPass(renderPass);
 
-const blendPointsPass = new ShaderPass(BlendPointsShader);
 if (RENDER_PLANE) {
+  const blendPointsPass = new ShaderPass(BlendPointsShader);
+  blendPointsPass.uniforms.resolution.value.set(
+    canvas.offsetWidth * dpr,
+    canvas.offsetHeight * dpr
+  );
   blendPointsPass.renderToScreen = true;
-  blendPointsPass.uniforms.horizontalCells.value = GRID_CELLS;
-  blendPointsPass.uniforms.verticalCells.value = GRID_CELLS;
   composer.addPass(blendPointsPass);
 }
 
-const canvasRect = {
-  w: viewportHeight,
-  h: viewportHeight,
-  l: viewportHeight * -0.485,
-  r: viewportHeight * 0.485,
-  t: viewportHeight * 0.485,
-  b: viewportHeight * -0.485,
-  radius: viewportHeight * 0.485,
-  radiusSq: (viewportHeight * 0.485) ** 2
-};
-
-const light = new PointLight(0xffffff, 1, 100);
-light.position.set(20, 10, 30);
-scene.add(light);
-
-const data = new Uint8Array(4 * GRID_CELLS * GRID_CELLS);
-
-blendPointsPass.uniforms.resolution.value.set(
-  canvas.offsetWidth * dpr,
-  canvas.offsetHeight * dpr
-);
-
-const dataTexture = new DataTexture(
-  data,
-  GRID_CELLS,
-  GRID_CELLS,
-  RGBAFormat,
-  UnsignedByteType
-);
-
-dataTexture.magFilter = LinearFilter;
-blendPointsPass.uniforms.grid.value = dataTexture;
-
+// Initialize
 for (let i = 0; i < PARTICLE_COUNT; i++) {
   state.x[i] =
-    Math.cos(Math.random() * 2 * Math.PI) *
-    Math.sqrt(Math.random()) *
-    canvasRect.r;
+    Math.cos(Math.random() * 2 * Math.PI) * Math.sqrt(Math.random()) * radius;
   state.y[i] =
-    Math.cos(Math.random() * 2 * Math.PI) *
-    Math.sqrt(Math.random()) *
-    canvasRect.t;
+    Math.cos(Math.random() * 2 * Math.PI) * Math.sqrt(Math.random()) * radius;
   state.oldX[i] = state.x[i];
   state.oldY[i] = state.y[i];
   state.vx[i] = 0;
   state.vy[i] = 0;
   state.color[i] = Math.floor(Math.random() * colors.length);
 
-  const gridX = (state.x[i] / canvasRect.w + 0.5) * GRID_CELLS;
-  const gridY = (state.y[i] / canvasRect.h + 0.5) * GRID_CELLS;
+  const gridX = (state.x[i] / radius / 2 + 0.5) * GRID_CELLS;
+  const gridY = (state.y[i] / radius / 2 + 0.5) * GRID_CELLS;
   hashMap.add(gridX, gridY, i);
-}
 
-for (let i = 0; i < PARTICLE_COUNT; i++) {
   const mesh = particleMeshes[state.color[i]].clone();
   state.mesh[i] = mesh;
   scene.add(mesh);
 }
+
+// Setup listeners
+window.addEventListener("mousemove", e => {
+  const { x, y } = screenToWorldSpace({
+    x: e.clientX,
+    y: e.clientY,
+    width,
+    height
+  });
+  state.mouse = [x, y];
+});
 
 const simulate = dt => {
   hashMap.clear();
@@ -213,8 +173,8 @@ const simulate = dt => {
     state.y[i] += state.vy[i] * dt;
 
     // Update hashmap
-    const gridX = (state.x[i] / canvasRect.w + 0.5) * GRID_CELLS;
-    const gridY = (state.y[i] / canvasRect.h + 0.5) * GRID_CELLS;
+    const gridX = (state.x[i] / radius / 2 + 0.5) * GRID_CELLS;
+    const gridY = (state.y[i] / radius / 2 + 0.5) * GRID_CELLS;
     hashMap.add(gridX, gridY, i);
   }
 
@@ -239,15 +199,16 @@ const simulate = dt => {
   }
 };
 
-const applyGlobalForces = (i, dt) => {
-  let force = [0, 0];
-  force = add(force, Array.from(GRAVITY));
-  force = add(force, [0, -0.25 * state.color[i]]);
-
+const mouseForce = i => {
   const fromMouse = subtract([state.x[i], state.y[i]], state.mouse);
   const scalar = Math.min(350, 2700 / lengthSq(fromMouse));
   const mouseForce = multiplyScalar(unitApprox(fromMouse), scalar);
-  force = add(force, mouseForce);
+  return mouseForce;
+};
+
+const applyGlobalForces = (i, dt) => {
+  const forces = [Array.from(GRAVITY), mouseForce(i)]
+  const force = forces.reduce(add);
 
   const m = mass(i);
   state.vx[i] += (force[0] * dt) / m;
@@ -255,10 +216,10 @@ const applyGlobalForces = (i, dt) => {
 };
 
 const getNeighborsWithGradients = i => {
-  const gridX = (state.x[i] / canvasRect.w + 0.5) * GRID_CELLS;
-  const gridY = (state.y[i] / canvasRect.h + 0.5) * GRID_CELLS;
-  const radius = (interactionRadius / canvasRect.w) * GRID_CELLS;
-  const results = hashMap.query(gridX, gridY, radius);
+  const gridX = (state.x[i] / radius / 2 + 0.5) * GRID_CELLS;
+  const gridY = (state.y[i] / radius / 2 + 0.5) * GRID_CELLS;
+  const queryRadius = (interactionRadius / radius / 2) * GRID_CELLS;
+  const results = hashMap.query(gridX, gridY, queryRadius);
 
   const neighbors = [];
 
@@ -301,10 +262,9 @@ const relax = (i, neighbors, dt) => {
     const nPos = [state.x[n], state.y[n]];
 
     const magnitude = state.p[i] * g + state.pNear[i] * g * g;
-    const f = state.color[i] === state.color[n] ? 0.99 : 1;
     const d = multiplyScalar(
       unitApprox(subtract(nPos, pos)),
-      magnitude * f * dt * dt
+      magnitude * dt * dt
     );
 
     const massI = mass(i);
@@ -340,9 +300,9 @@ const gradient = (i, n) => {
 const contain = (i, dt) => {
   const pos = [state.x[i], state.y[i]];
 
-  if (lengthSq(pos) > canvasRect.radiusSq) {
+  if (lengthSq(pos) > radiusSq) {
     const unitPos = unit(pos);
-    const newPos = multiplyScalar(clone(unitPos), canvasRect.radius);
+    const newPos = multiplyScalar(clone(unitPos), radius);
     state.x[i] = newPos[0];
     state.y[i] = newPos[1];
 
@@ -362,6 +322,7 @@ const calculateVelocity = (i, dt) => {
   state.vy[i] = v[1];
 };
 
+// Run
 const maxFrameDuration = 1 / 35;
 
 let frame;
@@ -400,16 +361,6 @@ document.addEventListener("keyup", e => {
   } else {
     setTimeout(startRecording, 100);
   }
-});
-
-window.addEventListener("mousemove", e => {
-  const { x, y } = screenToWorldSpace({
-    x: e.clientX,
-    y: e.clientY,
-    width,
-    height
-  });
-  state.mouse = [x, y];
 });
 
 start();

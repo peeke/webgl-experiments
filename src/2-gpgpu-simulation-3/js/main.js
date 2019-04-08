@@ -1,9 +1,7 @@
 import GPUComputationRenderer from "../../vendor/yomboprime/GPUComputationRenderer";
 import {
   PlaneGeometry,
-  CircleGeometry,
   Mesh,
-  PointLight,
   AmbientLight,
   DirectionalLight,
   Scene,
@@ -13,13 +11,10 @@ import {
   Vector2,
   MeshBasicMaterial,
   MeshPhongMaterial,
-  MeshLambertMaterial,
-  SphereGeometry,
   TextureLoader,
   CubeTextureLoader,
   MixOperation,
   Texture,
-  RGBFormat,
   PCFSoftShadowMap
 } from "three";
 
@@ -30,30 +25,43 @@ import screenShader from "../glsl/fragment-shaders/screen.glsl";
 import wavesShader from "../glsl/compute-shaders/waves.glsl";
 import causticsShader from "../glsl/fragment-shaders/caustics.glsl";
 
+import calculateViewportHeight from "../../js/utils/calculateViewportHeight";
 import { startRecording, stopRecording, download } from "../../js/utils/record";
 
 import envPx from "../img/px.jpg";
 import envPy from "../img/py.jpg";
 import envPz from "../img/py.jpg";
 import envNx from "../img/nx.jpg";
-import envNy from "../img/ny.jpg";
 import envNz from "../img/nz.jpg";
 import white from "../img/white.png";
 import bottom from "../img/bottom.jpg";
-import stencil from "../img/stencil.png";
-import waveMaskTexture from "../img/mask.png";
+import mask from "../img/mask.png";
 
-const rad = deg => (deg / 180) * Math.PI;
+// Load textures
+const maskTexture = new TextureLoader().load(mask);
+const groundTexture = new TextureLoader().load(bottom);
+const envMap = new CubeTextureLoader().load([
+  envPx,
+  envNx,
+  envPy,
+  white,
+  envPz,
+  envNz
+]);
 
+// Setup THREE js boilerplate
 const canvas = document.querySelector("#canvas");
 const { offsetWidth: width, offsetHeight: height } = canvas;
-const calculateViewportHeight = (perspectiveAngle, distance) => {
-  return Math.tan(rad(perspectiveAngle / 2)) * distance * 2;
-};
 const viewportHeight = calculateViewportHeight(75, 30);
 
-const topScene = new Scene();
-const bottomScene = new Scene();
+const intermediateTarget = new WebGLRenderTarget(width, height);
+const renderer = new WebGLRenderer({
+  canvas,
+  alpha: true
+});
+
+renderer.setSize(width, height);
+renderer.setClearColor(0xffffff);
 
 const camera = new OrthographicCamera(
   viewportHeight / -2,
@@ -65,17 +73,7 @@ const camera = new OrthographicCamera(
 );
 camera.position.z = 30;
 
-const intermediateTarget = new WebGLRenderTarget(width, height);
-const renderer = new WebGLRenderer({
-  canvas,
-  alpha: true
-});
-// renderer.setPixelRatio(window.devicePixelRatio);
-renderer.setSize(width, height);
-renderer.setClearColor(0xffffff);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = PCFSoftShadowMap;
-
+// Texture passes (apply a texture to a shader)
 const normalMapPass = new TexturePass(renderer, normalMapShader);
 const causticsPass = new TexturePass(renderer, causticsShader);
 const refractPass = new TexturePass(renderer, refractShader, {
@@ -83,11 +81,15 @@ const refractPass = new TexturePass(renderer, refractShader, {
     value: new Texture()
   }
 });
-const combinePass = new TexturePass(renderer, screenShader, {
+const groundPass = new TexturePass(renderer, screenShader, {
   u_texture2: {
-    value: new Texture()
+    value: groundTexture
   }
 });
+
+// Setup scene's, geometries, materials and meshes
+const belowSurfaceScene = new Scene();
+const finalScene = new Scene();
 
 const planeGeometry = new PlaneGeometry(
   (viewportHeight * width) / height,
@@ -95,42 +97,26 @@ const planeGeometry = new PlaneGeometry(
   32
 );
 
-const envMap = new CubeTextureLoader().load([
-  envPx,
-  envNx,
-  envPy,
-  white,
-  envPz,
-  envNz
-]);
-// scene.background = envMap;
-
-const stencilMap = new TextureLoader().load(stencil);
-const bottomTexture = new TextureLoader().load(bottom);
-
-const bottomPlaneMaterial = new MeshBasicMaterial({
+const groundMaterial = new MeshBasicMaterial({
   color: 0xffffff,
-  map: bottomTexture
+  map: groundTexture
 });
-const bottomPlane = new Mesh(planeGeometry, bottomPlaneMaterial);
-bottomPlane.receiveShadow = true;
-bottomPlane.position.set(0, 0, -10);
-bottomScene.add(bottomPlane);
+const groundPlane = new Mesh(planeGeometry, groundMaterial);
+groundPlane.position.set(0, 0, -10);
+belowSurfaceScene.add(groundPlane);
 
-const bottomFlattenedPlaneMaterial = new MeshBasicMaterial({
+const belowSurfaceMaterial = new MeshBasicMaterial({
   color: 0xffffff
 });
-const bottomFlattenedPlane = new Mesh(
-  planeGeometry,
-  bottomFlattenedPlaneMaterial
-);
-bottomFlattenedPlane.position.set(0, 0, -10);
-topScene.add(bottomFlattenedPlane);
+const belowSurface = new Mesh(planeGeometry, belowSurfaceMaterial);
+belowSurface.position.set(0, 0, -10);
+finalScene.add(belowSurface);
 
-const topPlaneMaterial = new MeshPhongMaterial({
+const surfaceMaterial = new MeshPhongMaterial({
   color: 0xd1faf2,
   premultipliedAlpha: true,
   transparent: true,
+  alphaMask: mask,
   opacity: 0.45,
   shininess: 100,
   specular: 0x18588e,
@@ -138,43 +124,21 @@ const topPlaneMaterial = new MeshPhongMaterial({
   combine: MixOperation,
   reflectivity: 0.8
 });
-const topPlane = new Mesh(planeGeometry, topPlaneMaterial);
-topPlane.position.set(0, 0, 0);
-topScene.add(topPlane);
 
-const stencilPlaneMaterial = new MeshBasicMaterial({
-  color: 0xffffff,
-  transparent: true,
-  alphaMap: stencilMap
-});
-const stencilPlane = new Mesh(planeGeometry, stencilPlaneMaterial);
-stencilPlane.position.set(0, 0, 0);
-topScene.add(stencilPlane);
-
-// const shpereMaterial = new MeshPhongMaterial({
-//   color: 0xcccccc,
-//   premultipliedAlpha: true,
-//   shininess: 30,
-//   specular: 0xffffff
-// });
-// const sphere = new Mesh(
-//   new SphereGeometry(viewportHeight / 10, 32, 32),
-//   shpereMaterial
-// );
-// sphere.castShadow = true;
-// sphere.position.set(0, 0, -10);
-// bottomScene.add(sphere);
+const surfacePlane = new Mesh(planeGeometry, surfaceMaterial);
+surfacePlane.position.set(0, 0, 0);
+finalScene.add(surfacePlane);
 
 const light = new DirectionalLight(0xffffff, 1);
 light.position.set(viewportHeight * 2, viewportHeight * 2, viewportHeight);
 light.lookAt(0, 0, 0);
 light.castShadow = true;
-bottomScene.add(light.clone());
-topScene.add(light);
+belowSurfaceScene.add(light.clone());
+finalScene.add(light);
 
-const ambientLight = new AmbientLight(0xffffff, 0.5); // soft white light
-bottomScene.add(ambientLight.clone());
-topScene.add(ambientLight);
+const ambientLight = new AmbientLight(0xffffff, 1); // soft white light
+belowSurfaceScene.add(ambientLight.clone());
+finalScene.add(ambientLight);
 
 const gpuCompute = new GPUComputationRenderer(width, height, renderer);
 const gpTexture = gpuCompute.createTexture();
@@ -195,28 +159,17 @@ gpVariable.material.uniforms = {
     value: new Vector2(-2, -2)
   },
   u_waveMask: {
-    value: new TextureLoader().load(waveMaskTexture)
+    value: maskTexture
   }
 };
 
-let mouse = new Vector2(-2, -2);
-const offset = canvas.getBoundingClientRect();
-window.addEventListener("mousemove", e => {
-  mouse = new Vector2(e.clientX - offset.left, height - e.clientY + offset.top);
-});
-
-const error = gpuCompute.init();
-if (error !== null) {
-  throw error;
-}
+gpuCompute.init();
 
 function initTexture(texture) {
   const pixels = texture.image.data;
   for (let i = 0; i < pixels.length; i += 4) {
     pixels[i] = 0.5;
     pixels[i + 1] = 0.5;
-    pixels[i + 2] = 0.5;
-    pixels[i + 3] = 0.5;
   }
 }
 
@@ -232,36 +185,42 @@ const render = () => {
     gpuCompute.compute();
   }
 
-  // Get compute output in custom uniform
-  const renderTarget = gpuCompute.getCurrentRenderTarget(gpVariable);
-  const heightMap = renderTarget.texture;
+  // Process all shaders
+  const heightMap = gpuCompute.getCurrentRenderTarget(gpVariable).texture;
   const normalMap = normalMapPass.process(heightMap);
-
   const caustics = causticsPass.process(normalMap);
+  const groundWithCaustics = groundPass.process(caustics);
 
-  combinePass.uniforms.u_texture2.value = bottomTexture;
-  const combined = combinePass.process(caustics);
+  groundMaterial.map = groundWithCaustics;
 
-  bottomPlaneMaterial.map = combined;
-  // bottomPlaneMaterial.map = caustics;
-  topPlaneMaterial.normalMap = normalMap;
+  renderer.render(belowSurfaceScene, camera, intermediateTarget);
 
-  renderer.render(bottomScene, camera, intermediateTarget);
-
-  // bottomFlattenedPlaneMaterial.map = intermediateTarget.texture;
   refractPass.uniforms.u_refract.value = heightMap;
-  bottomFlattenedPlaneMaterial.map = refractPass.process(
-    intermediateTarget.texture
-  );
+  const refractedComposite = refractPass.process(intermediateTarget.texture);
 
-  renderer.render(topScene, camera);
+  surfaceMaterial.normalMap = normalMap;
+  belowSurfaceMaterial.map = refractedComposite;
 
-  mouse = new Vector2(-2, -2);
+  renderer.render(finalScene, camera);
+
+  // Reset mouse after it's used in the calculation
+  mouse =
+    Math.random() > 0.1
+      ? new Vector2(-width, -height)
+      : new Vector2(Math.random() * width, Math.random() * height);
 };
+
+let mouse = new Vector2(-viewportHeight, -viewportHeight);
+const offset = canvas.getBoundingClientRect();
+window.addEventListener("mousemove", e => {
+  mouse = new Vector2(e.clientX - offset.left, height - e.clientY + offset.top);
+});
 
 requestIdleCallback(() => render());
 
+// Enable recording on space key press
 let recording = false;
+
 document.addEventListener("keyup", e => {
   if (e.which !== 32) return;
 

@@ -9,7 +9,6 @@ uniform sampler2D u_texture;
 float caustic(vec2 uv){
   vec4 normal=(texture2D(u_texture,uv)-.5)*2.;
   float angle=acos(dot(normal.xyz,LIGHT));
-  // return angle<1.23?1.:0.;
   return 1.-clamp(angle*REFRACTION,0.,1.25)/1.2;
 }
 
@@ -19,5 +18,5 @@ void main(){
   
   float color=caustic(uv);
   
-  gl_FragColor=vec4(vec3(color*.2),1.);
+  gl_FragColor=vec4(vec3(color*.4),1.);
 }
