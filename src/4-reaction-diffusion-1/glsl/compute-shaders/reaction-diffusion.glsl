@@ -1,25 +1,51 @@
+#define FEED_RATE .042 // 0.042 // 0.042 // 0.03
+#define KILL_RATE .063 // 0.063 // 0.063 // 0.058
+#define DIFFUSION_A 1.0
+#define DIFFUSION_B .5
 
 uniform float u_delta;
+uniform vec2 u_mouse;
 uniform vec2 u_resolution;
 uniform vec2 u_inv_resolution;
 
-vec4 blur(sampler2D texture,vec2 uv,vec2 direction){
-  vec4 color=vec4(0.);
-  vec2 off1=vec2(1.3333333333333333)*direction;
-  color+=texture2D(texture,uv)*.29411764705882354;
-  color+=texture2D(texture,uv+(off1*u_inv_resolution))*.35294117647058826;
-  color+=texture2D(texture,uv-(off1*u_inv_resolution))*.35294117647058826;
-  return color;
+vec4 sample(vec2 uv){
+  return texture2D(textureReactionDiffusion,uv);
+}
+
+vec4 sample(vec2 uv,vec2 o){
+  vec2 no=o*u_inv_resolution;
+  
+  // if(texture2D(textureReactionDiffusion,uv+no).w<1.){
+  //   return texture2D(textureReactionDiffusion,uv);
+  // }
+  
+  return texture2D(textureReactionDiffusion,uv+no);
 }
 
 void main(){
   vec2 uv=gl_FragCoord.xy*u_inv_resolution.xy;
-  vec4 diffused1=(blur(textureReactionDiffusion,uv,vec2(4.,0.))+blur(textureReactionDiffusion,uv,vec2(0.,4.)))/2.;
-  vec4 diffused4=(blur(textureReactionDiffusion,uv,vec2(16.,0.))+blur(textureReactionDiffusion,uv,vec2(0.,16.)))/2.;
+  vec4 sampled=sample(uv);
   
-  vec4 diff=diffused4-diffused1;
-  vec4 amplified = (vec4(-.25) + diff) * 10.0;
+  vec4 lapla=sampled*-1.+
+    sample(uv,vec2(-1.,.0)) * .2+
+    sample(uv,vec2(1.,.0)) * .2+
+    sample(uv,vec2(.0,-1.)) * .2+
+    sample(uv,vec2(0.,1.)) * .2+
+    sample(uv,vec2(-1.,-1.)) * .05+
+    sample(uv,vec2(1.,1.0)) * .05+
+    sample(uv,vec2(1.0,-1.)) * .05+
+    sample(uv,vec2(-1.0,1.)) * .05;
+
+  float k = KILL_RATE + uv.x * -.0125;
+  float f = FEED_RATE + uv.y * -.025;
+
+  float a = clamp(sampled.x+(DIFFUSION_A*lapla.x) - sampled.x * sampled.y * sampled.y + f * (1.0 - sampled.x), 0.0, 1.0);
+  float b = clamp(sampled.y+(DIFFUSION_B*lapla.y) + sampled.x * sampled.y * sampled.y - (k + f) * sampled.y, 0.0, 1.0);
   
-  gl_FragColor=clamp(amplified,vec4(0.,0.,0.,1.),vec4(1.));
-  
+  float distance = length(gl_FragCoord.xy - u_mouse);
+  if (distance < 4.0) {
+    b = 1.0;
+  }
+
+  gl_FragColor=vec4(a, b, sampled.zw);
 }

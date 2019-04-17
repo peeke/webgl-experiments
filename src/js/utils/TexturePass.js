@@ -30,6 +30,9 @@ class TexturePass {
     this.renderTarget = new WebGLRenderTarget(width, height);
     this.material = new ShaderMaterial({
       uniforms: {
+        u_resolution: {
+          value: new Vector2(width, height)
+        },
         u_inv_resolution: {
           value: new Vector2(1 / width, 1 / height)
         },

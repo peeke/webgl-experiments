@@ -2,6 +2,7 @@ import GPUComputationRenderer from '../../vendor/yomboprime/GPUComputationRender
 import {
   PlaneGeometry,
   Mesh,
+  MeshBasicMaterial,
   PointLight,
   Scene,
   PerspectiveCamera,
@@ -9,8 +10,9 @@ import {
   Vector2
 } from "three";
 
-import { TextureMaterial } from './material';
+import TexturePass from "../../js/utils/TexturePass";
 import reactionDiffusionFragmentShader from '../glsl/compute-shaders/reaction-diffusion.glsl'
+import displayShader from '../glsl/fragment-shaders/display.glsl'
 
 const canvas = document.querySelector("#canvas");
 const dpr = window.devicePixelRatio
@@ -27,6 +29,8 @@ const renderer = new WebGLRenderer({ canvas, alpha: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(width, height);
 
+const displayPass = new TexturePass(renderer, displayShader);
+
 const viewportHeight = calculateViewportHeight(75, 30);
 const geometry = new PlaneGeometry(
   viewportHeight * width / height,
@@ -34,7 +38,7 @@ const geometry = new PlaneGeometry(
   32
 );
 
-const material = new TextureMaterial();
+const material = new MeshBasicMaterial();
 const plane = new Mesh(geometry, material);
 scene.add(plane);
 
@@ -42,9 +46,12 @@ const light = new PointLight(0xffffff, 1, 100);
 light.position.set(20, 10, 30);
 scene.add(light);
 
-// window.addEventListener('mousemove', e => {
-//   material.uniforms.u_mouse.value = new Vector2(e.clientX * dpr, (window.innerHeight - e.clientY) * dpr)
-// })
+window.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect()
+  const mouseX = e.clientX - rect.left
+  const mouseY = (window.innerHeight - e.clientY) - rect.top
+  gpVariable.material.uniforms.u_mouse.value = new Vector2(mouseX * dpr, mouseY * dpr)
+})
 
 const gpuCompute = new GPUComputationRenderer(width * dpr, height * dpr, renderer);
 const gpTexture = gpuCompute.createTexture();
@@ -62,6 +69,9 @@ gpVariable.material.uniforms = {
   },
   u_delta: {
     value: 1000 / 60
+  },
+  u_mouse: {
+    value: new Vector2(-2, -2)
   }
 }
 
@@ -72,11 +82,15 @@ if (error !== null) {
 
 function initTexture(texture) {
   const pixels = texture.image.data;
+  const radius = width * dpr / 2;
   for (let i = 0; i < pixels.length; i += 4) {
-    const v = Math.round(Math.random())
-    pixels[i] = v;
-    pixels[i + 1] = v;
-    pixels[i + 2] = v;
+    const x = i / 4 % (width * dpr) - radius
+    const y = i / 4 / (width * dpr) - radius
+    const length = Math.sqrt(x ** 2 + y ** 2)
+    // const solid = Math.round(length / 8 % 2)
+    pixels[i] = 1;
+    pixels[i + 1] = length < radius / 8 ? 1 : 0;
+    pixels[i + 2] = 1;
     pixels[i + 3] = 1;
   }
 }
@@ -89,11 +103,16 @@ const render = () => {
   gpVariable.material.uniforms.u_delta.value = 1000 / 60;
 
   // Do the gpu computation
-  gpuCompute.compute();
+  let i = 10
+  while (i--) {
+    gpuCompute.compute();
+  }
 
   // Get compute output in custom uniform
   const renderTarget = gpuCompute.getCurrentRenderTarget(gpVariable)
-  material.uniforms.u_texture.value = renderTarget.texture;
+  const displayTexture = displayPass.process(renderTarget.texture);
+
+  material.map = displayTexture;
 
   renderer.render(scene, camera);
 
