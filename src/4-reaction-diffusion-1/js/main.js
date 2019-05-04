@@ -10,7 +10,8 @@ import {
   Vector2,
   TextureLoader,
   DataTexture,
-  RGBAFormat
+  RGBAFormat,
+  Texture
 } from "three";
 
 import calculateViewportHeight from "../../js/utils/calculateViewportHeight";
@@ -19,6 +20,7 @@ import TexturePass from "../../js/utils/TexturePass";
 import clampNumber from "../../js/clampNumber";
 
 import reactionDiffusionShader from '../glsl/compute-shaders/reaction-diffusion.glsl'
+import twoStepBlurShader from '../glsl/compute-shaders/two-step-blur.glsl'
 import displayShader from '../glsl/fragment-shaders/display.glsl'
 import basicShader from '../glsl/fragment-shaders/basic.glsl'
 
@@ -65,12 +67,41 @@ const displayPass = new TexturePass(renderer, displayShader, {
   }
 });
 
+const blurX = 1
+const blurY = .4
+
+const twoStepBlurShaderXStep1 = new TexturePass(renderer, twoStepBlurShader, {
+  u_radius: { value: blurX },
+  u_dir: { value: new Vector2(1, 0) }
+})
+
+const twoStepBlurShaderXStep2 = new TexturePass(renderer, twoStepBlurShader, {
+  u_radius: { value: blurX },
+  u_dir: { value: new Vector2(0, 1) }
+})
+
+const twoStepBlurShaderYStep1 = new TexturePass(renderer, twoStepBlurShader, {
+  u_radius: { value: blurY },
+  u_dir: { value: new Vector2(1, 0) }
+})
+
+const twoStepBlurShaderYStep2 = new TexturePass(renderer, twoStepBlurShader, {
+  u_radius: { value: blurY },
+  u_dir: { value: new Vector2(0, 1) }
+})
+
 const reactionDiffusionPass = new TexturePass(renderer, reactionDiffusionShader, {
   u_mouse: {
     value: new Vector2
   },
   u_mask: {
     value: maskTexture
+  },
+  u_blurred_x: {
+    value: new Texture()
+  },
+  u_blurred_y: {
+    value: new Texture()
   }
 });
 
@@ -101,9 +132,16 @@ const render = () => {
   requestAnimationFrame(render);
 
   // Do the gpu computation
-  let i = 3
+  let i = 1
   while (i--) {
-    textureB = reactionDiffusionPass.process(textureA)
+    const blurredX = twoStepBlurShaderXStep2.process(twoStepBlurShaderXStep1.process(textureA))
+    const blurredY = twoStepBlurShaderYStep2.process(twoStepBlurShaderYStep1.process(textureA))
+    
+    reactionDiffusionPass.uniforms.u_blurred_x.value = blurredX
+    reactionDiffusionPass.uniforms.u_blurred_y.value = blurredY
+    const reactionTexture = reactionDiffusionPass.process(textureA)
+
+    textureB = reactionTexture
     textureA = swapPass.process(textureB)
   }
 
@@ -113,3 +151,5 @@ const render = () => {
 };
 
 Promise.all(texturesLoading).then(render)
+
+window.render = render
