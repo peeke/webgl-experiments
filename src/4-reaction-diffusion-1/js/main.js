@@ -1,4 +1,3 @@
-import GPUComputationRenderer from '../../vendor/yomboprime/GPUComputationRenderer'
 import {
   PlaneGeometry,
   Mesh,
@@ -18,6 +17,7 @@ import calculateViewportHeight from "../../js/utils/calculateViewportHeight";
 import { noise } from "../../js/utils/noise";
 import TexturePass from "../../js/utils/TexturePass";
 import clampNumber from "../../js/clampNumber";
+import mapNumber from "../../js/mapNumber";
 
 import reactionDiffusionShader from '../glsl/compute-shaders/reaction-diffusion.glsl'
 import twoStepBlurShader from '../glsl/compute-shaders/two-step-blur.glsl'
@@ -25,6 +25,8 @@ import displayShader from '../glsl/fragment-shaders/display.glsl'
 import basicShader from '../glsl/fragment-shaders/basic.glsl'
 
 import maskTexturePath from "../img/mask.png";
+
+const PASSES = 1
 
 const texturesLoading = []
 
@@ -42,7 +44,6 @@ renderer.setSize(width, height);
 let maskTextureLoaded
 texturesLoading.push(new Promise(resolve => { maskTextureLoaded = resolve }))
 const maskTexture = new TextureLoader().load(maskTexturePath, maskTextureLoaded)
-// maskTexture.repeat.set(1, 1)
 
 const seed = Math.random() * 1000
 
@@ -67,8 +68,13 @@ const displayPass = new TexturePass(renderer, displayShader, {
   }
 });
 
-const blurX = 1
-const blurY = .4
+const blurX = 3
+const blurY = 1.4
+
+const feedA = .022
+const feedB = .090
+const killA = .065
+const killB = .065
 
 const twoStepBlurShaderXStep1 = new TexturePass(renderer, twoStepBlurShader, {
   u_radius: { value: blurX },
@@ -102,6 +108,12 @@ const reactionDiffusionPass = new TexturePass(renderer, reactionDiffusionShader,
   },
   u_blurred_y: {
     value: new Texture()
+  },
+  u_feed_rate: {
+    value: 0
+  },
+  u_kill_rate: {
+    value: 0
   }
 });
 
@@ -132,13 +144,18 @@ const render = () => {
   requestAnimationFrame(render);
 
   // Do the gpu computation
-  let i = 1
+  let i = PASSES
   while (i--) {
     const blurredX = twoStepBlurShaderXStep2.process(twoStepBlurShaderXStep1.process(textureA))
     const blurredY = twoStepBlurShaderYStep2.process(twoStepBlurShaderYStep1.process(textureA))
-    
+    const f = noise.perlin2(performance.now() / 2500, seed)
+    const feed = mapNumber(f, -1, 1, feedA, feedB)
+    const kill = mapNumber(f, -1, 1, killA, killB)
+
     reactionDiffusionPass.uniforms.u_blurred_x.value = blurredX
     reactionDiffusionPass.uniforms.u_blurred_y.value = blurredY
+    reactionDiffusionPass.uniforms.u_feed_rate.value = feed
+    reactionDiffusionPass.uniforms.u_kill_rate.value = kill
     const reactionTexture = reactionDiffusionPass.process(textureA)
 
     textureB = reactionTexture
