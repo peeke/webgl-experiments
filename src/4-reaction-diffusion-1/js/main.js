@@ -17,6 +17,8 @@ import displayShader from '../glsl/fragment-shaders/display.glsl'
 
 import maskTexture from "../img/mask.png";
 
+const mask = new TextureLoader().load(maskTexture)
+
 const canvas = document.querySelector("#canvas");
 const dpr = window.devicePixelRatio
 const { offsetWidth: width, offsetHeight: height } = canvas;
@@ -32,7 +34,11 @@ const renderer = new WebGLRenderer({ canvas, alpha: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(width, height);
 
-const displayPass = new TexturePass(renderer, displayShader);
+const displayPass = new TexturePass(renderer, displayShader, {
+  u_mask: {
+    value: mask
+  }
+});
 
 const viewportHeight = calculateViewportHeight(75, 30);
 const geometry = new PlaneGeometry(
@@ -77,7 +83,7 @@ gpVariable.material.uniforms = {
     value: new Vector2(-2, -2)
   },
   u_mask: {
-    value: new TextureLoader().load(maskTexture)
+    value: mask
   }
 }
 
