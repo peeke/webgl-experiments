@@ -14,13 +14,17 @@ import {
 } from "three";
 
 import calculateViewportHeight from "../../js/utils/calculateViewportHeight";
+import { noise } from "../../js/utils/noise";
 import TexturePass from "../../js/utils/TexturePass";
+import clampNumber from "../../js/clampNumber";
 
 import reactionDiffusionShader from '../glsl/compute-shaders/reaction-diffusion.glsl'
 import displayShader from '../glsl/fragment-shaders/display.glsl'
 import basicShader from '../glsl/fragment-shaders/basic.glsl'
 
 import maskTexturePath from "../img/mask.png";
+
+const texturesLoading = []
 
 const canvas = document.querySelector("#canvas");
 const { offsetWidth: width, offsetHeight: height } = canvas;
@@ -33,10 +37,20 @@ const renderer = new WebGLRenderer({ canvas, alpha: true });
 renderer.setPixelRatio(1);
 renderer.setSize(width, height);
 
-const maskTexture = new TextureLoader().load(maskTexturePath)
-maskTexture.repeat.set(1, 1)
+let maskTextureLoaded
+texturesLoading.push(new Promise(resolve => { maskTextureLoaded = resolve }))
+const maskTexture = new TextureLoader().load(maskTexturePath, maskTextureLoaded)
+// maskTexture.repeat.set(1, 1)
 
-const data = new Uint8Array(4 * width * height).map((_, i) => [255, 0, 0, 255][i % 4])
+const seed = Math.random() * 1000
+
+const data = new Uint8Array(4 * width * height).map((_, i) => {
+  const x = Math.floor(i / 4) % width
+  const y = Math.floor(i / 4 / width)
+  return i % 4 !== 1
+    ? 255
+    : clampNumber(noise.perlin3(x / 50, y / 50, seed), 0, 1) * 255
+})
 
 let textureA = new DataTexture(data, width, height, RGBAFormat)
 let textureB = textureA.clone()
@@ -87,10 +101,10 @@ const render = () => {
   requestAnimationFrame(render);
 
   // Do the gpu computation
-  let i = 2
+  let i = 3
   while (i--) {
-    textureA = swapPass.process(textureB)
     textureB = reactionDiffusionPass.process(textureA)
+    textureA = swapPass.process(textureB)
   }
 
   material.map = displayPass.process(textureB);
@@ -98,4 +112,4 @@ const render = () => {
 
 };
 
-render();
+Promise.all(texturesLoading).then(render)

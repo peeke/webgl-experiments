@@ -15,9 +15,9 @@ void main() {
 
   float color = sampled.x - sampled.y;
   vec3 result = color < .5
-    ? mix(colorA, colorB, smoothstep(0.0, 1.0, color / .5))
-    : mix(colorB, colorC, smoothstep(0.0, 1.0, (color - .5) / .5));
+    ? mix(colorA, colorB, smoothstep(0.1, .9, color / .5))
+    : mix(colorB, colorC, smoothstep(0.1, .9, (color - .5) / .5));
 
-  gl_FragColor = vec4(result, texture2D(u_mask, uv).x);
+  gl_FragColor = vec4(result, 1.0);
 
 }
