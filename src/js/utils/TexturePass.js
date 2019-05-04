@@ -28,6 +28,10 @@ class TexturePass {
     this.scene.add(this.camera);
 
     this.renderTarget = new WebGLRenderTarget(width, height);
+
+    const texture = new Texture()
+    texture.repeat.set(1, 1)
+
     this.material = new ShaderMaterial({
       uniforms: {
         u_resolution: {
@@ -37,7 +41,7 @@ class TexturePass {
           value: new Vector2(1 / width, 1 / height)
         },
         u_texture: {
-          value: new Texture()
+          value: texture
         },
         ...uniforms
       },

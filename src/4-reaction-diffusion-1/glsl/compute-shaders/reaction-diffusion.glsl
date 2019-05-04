@@ -3,24 +3,24 @@
 #define DIFFUSION_A 1.0
 #define DIFFUSION_B .5
 
-uniform float u_delta;
 uniform vec2 u_mouse;
 uniform vec2 u_resolution;
 uniform vec2 u_inv_resolution;
+uniform sampler2D u_texture;
 uniform sampler2D u_mask;
 
 vec4 sample(vec2 uv){
-  return texture2D(textureReactionDiffusion,uv);
+  return texture2D(u_texture,uv);
 }
 
 vec4 sample(vec2 uv,vec2 o){
   vec2 no=o*u_inv_resolution;
   
   if(texture2D(u_mask, uv+no).x<.5){
-    return texture2D(textureReactionDiffusion,uv);
+    return texture2D(u_texture,uv);
   }
   
-  return texture2D(textureReactionDiffusion,uv+no);
+  return texture2D(u_texture,uv+no);
 }
 
 void main(){
