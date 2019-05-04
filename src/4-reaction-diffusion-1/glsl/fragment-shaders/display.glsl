@@ -8,8 +8,8 @@ void main() {
   vec2 uv = gl_FragCoord.xy / u_resolution.xy;
   vec4 sampled = texture2D(u_texture, uv);
 
-  float color = 1.0 - sampled.y * 4.0;
+  float color = sampled.x - sampled.y;
 
-  gl_FragColor = vec4(vec3(color), 1.0);
+  gl_FragColor = vec4(vec3(smoothstep(0.0, 1.0, color)), 1.0);
 
 }

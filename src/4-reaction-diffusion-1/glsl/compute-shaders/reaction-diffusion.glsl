@@ -7,6 +7,7 @@ uniform float u_delta;
 uniform vec2 u_mouse;
 uniform vec2 u_resolution;
 uniform vec2 u_inv_resolution;
+uniform sampler2D u_mask;
 
 vec4 sample(vec2 uv){
   return texture2D(textureReactionDiffusion,uv);
@@ -15,9 +16,9 @@ vec4 sample(vec2 uv){
 vec4 sample(vec2 uv,vec2 o){
   vec2 no=o*u_inv_resolution;
   
-  // if(texture2D(textureReactionDiffusion,uv+no).w<1.){
-  //   return texture2D(textureReactionDiffusion,uv);
-  // }
+  if(texture2D(u_mask, uv+no).x<.5){
+    return texture2D(textureReactionDiffusion,uv);
+  }
   
   return texture2D(textureReactionDiffusion,uv+no);
 }
@@ -45,6 +46,12 @@ void main(){
   float distance = length(gl_FragCoord.xy - u_mouse);
   if (distance < 4.0) {
     b = 1.0;
+  }
+
+  float maskValue = texture2D(u_mask, uv).x;
+  if(maskValue<1.){
+    b = mix(1.0, b, maskValue);
+    a = mix(2.0, a, maskValue);
   }
 
   gl_FragColor=vec4(a, b, sampled.zw);

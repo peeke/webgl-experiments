@@ -7,12 +7,15 @@ import {
   Scene,
   PerspectiveCamera,
   WebGLRenderer,
-  Vector2
+  Vector2,
+  TextureLoader
 } from "three";
 
 import TexturePass from "../../js/utils/TexturePass";
 import reactionDiffusionFragmentShader from '../glsl/compute-shaders/reaction-diffusion.glsl'
 import displayShader from '../glsl/fragment-shaders/display.glsl'
+
+import maskTexture from "../img/mask.png";
 
 const canvas = document.querySelector("#canvas");
 const dpr = window.devicePixelRatio
@@ -72,6 +75,9 @@ gpVariable.material.uniforms = {
   },
   u_mouse: {
     value: new Vector2(-2, -2)
+  },
+  u_mask: {
+    value: new TextureLoader().load(maskTexture)
   }
 }
 
@@ -82,7 +88,7 @@ if (error !== null) {
 
 function initTexture(texture) {
   const pixels = texture.image.data;
-  const radius = width * dpr / 2;
+  const radius = width * dpr *.9;
   for (let i = 0; i < pixels.length; i += 4) {
     const x = i / 4 % (width * dpr) - radius
     const y = i / 4 / (width * dpr) - radius
@@ -103,7 +109,7 @@ const render = () => {
   gpVariable.material.uniforms.u_delta.value = 1000 / 60;
 
   // Do the gpu computation
-  let i = 10
+  let i = 2
   while (i--) {
     gpuCompute.compute();
   }
