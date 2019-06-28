@@ -18,15 +18,16 @@ import { noise } from "../../js/utils/noise";
 import TexturePass from "../../js/utils/TexturePass";
 import clampNumber from "../../js/clampNumber";
 import mapNumber from "../../js/mapNumber";
+import { startRecording, stopRecording, download } from "../../js/utils/record";
 
 import reactionDiffusionShader from '../glsl/compute-shaders/reaction-diffusion.glsl'
 import twoStepBlurShader from '../glsl/compute-shaders/two-step-blur.glsl'
 import displayShader from '../glsl/fragment-shaders/display.glsl'
 import basicShader from '../glsl/fragment-shaders/basic.glsl'
 
-import maskTexturePath from "../img/mask.png";
+import maskTexturePath from "../img/basic-mask.png";
 
-const PASSES = 1
+const PASSES = 9
 
 const texturesLoading = []
 
@@ -148,7 +149,8 @@ const render = () => {
   while (i--) {
     const blurredX = twoStepBlurShaderXStep2.process(twoStepBlurShaderXStep1.process(textureA))
     const blurredY = twoStepBlurShaderYStep2.process(twoStepBlurShaderYStep1.process(textureA))
-    const f = noise.perlin2(performance.now() / 2500, seed)
+    // const f = noise.perlin2(performance.now() / 2500, seed)
+    const f = Math.abs(performance.now() % 6000 - 3000) / 3000
     const feed = mapNumber(f, -1, 1, feedA, feedB)
     const kill = mapNumber(f, -1, 1, killA, killB)
 
@@ -167,6 +169,19 @@ const render = () => {
 
 };
 
-Promise.all(texturesLoading).then(render)
+let recording = false
+document.addEventListener("keyup", e => {
+  if (e.which !== 32) return;
+
+  if (recording) {
+    stopRecording();
+    download();
+  } else {
+    startRecording()
+    Promise.all(texturesLoading).then(render)
+  }
+
+  recording = !recording
+});
 
 window.render = render

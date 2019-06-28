@@ -30,9 +30,9 @@ void main(){
   float b = clamp(texture2D(u_blurred_y,uv).y + sampled.x * sampled.y * sampled.y - (u_kill_rate + u_feed_rate) * sampled.y, 0.0, 1.0);
   
   float distance = length(gl_FragCoord.xy - u_mouse);
-  if (distance < 32.0) {
-    a = mix(1., a, distance / 32.0);
-    b = mix(.0, b, distance / 32.0);
+  if (distance < 50.0) {
+    a = mix(1., a, distance / 50.0);
+    b = mix(.0, b, distance / 50.0);
   }
 
   float maskValue = texture2D(u_mask, uv).x;
