@@ -19,7 +19,7 @@
     "gif-capture-canvas": "^1.0.1",
     "js-quadtree": "^1.2.0",
     "perf_hooks": "0.0.1",
-    "three": "^0.90.0"
+    "three": "^0.125.0"
   },
   "devDependencies": {
     "babel-core": "^6.26.3",
